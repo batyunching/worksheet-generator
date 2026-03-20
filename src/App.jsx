@@ -1,0 +1,767 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { Settings, Printer, Copy, Loader2, Key, BookOpen, AlertCircle, CheckCircle2, Download } from 'lucide-react';
+
+export default function App() {
+  // 系統狀態
+  const [apiKey, setApiKey] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [toast, setToast] = useState('');
+  const [worksheetData, setWorksheetData] = useState(null);
+  
+  // 參考列印區塊
+  const printRef = useRef(null);
+
+  // 表單設定狀態
+  const [grade, setGrade] = useState('國二'); 
+  const [cefrLevel, setCefrLevel] = useState('A1'); 
+  const [topic, setTopic] = useState('過度觀光生態超負荷');
+  const [format, setFormat] = useState('對話 Dialogue');
+  const [textLength, setTextLength] = useState('中: 12~16句'); 
+  const [vocabCount, setVocabCount] = useState(8);
+  const [phraseCount, setPhraseCount] = useState(2);
+  
+  const [tfCount, setTfCount] = useState(3);
+  const [fibCount, setFibCount] = useState(4);
+  const [mcCount, setMcCount] = useState(3);
+
+  // 動態切換文章與對話的長度選項
+  const isDialogue = format === '對話 Dialogue';
+  const lengthOptions = isDialogue
+    ? ['短: 8~12句', '中: 12~16句', '長: 17~20句']
+    : ['短: 50~100字', '中: 100~150字', '長: 150~200字'];
+
+  // 當格式改變時，自動修正字數/句數選項
+  useEffect(() => {
+    if (isDialogue && textLength.includes('字')) {
+      setTextLength('中: 12~16句');
+    } else if (!isDialogue && textLength.includes('句')) {
+      setTextLength('中: 100~150字');
+    }
+  }, [format, isDialogue, textLength]);
+
+  // 載入儲存的 API Key
+  useEffect(() => {
+    const savedKey = localStorage.getItem('gemini_api_key');
+    if (savedKey) setApiKey(savedKey);
+  }, []);
+
+  const showToast = (msg) => {
+    setToast(msg);
+    setTimeout(() => setToast(''), 4500);
+  };
+
+  const handleApiKeyChange = (e) => {
+    const key = e.target.value;
+    setApiKey(key);
+    localStorage.setItem('gemini_api_key', key);
+  };
+
+  const copyToClipboard = () => {
+    if (!printRef.current) return;
+    const range = document.createRange();
+    range.selectNode(printRef.current);
+    const selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+
+    try {
+      document.execCommand('copy');
+      showToast('✅ 已成功複製學習單！請打開 Word 貼上 (Ctrl+V 或 Cmd+V)。');
+    } catch (err) {
+      setError('複製失敗，請嘗試手動反白複製。');
+    }
+    selection.removeAllRanges();
+  };
+
+  const executePDFDownload = () => {
+    showToast('⏳ 正在轉換高畫質 PDF，請稍候幾秒鐘...');
+    const element = printRef.current;
+    const opt = {
+      margin:       [12, 12, 12, 12], 
+      filename:     `${topic}_跨域學習單.pdf`,
+      image:        { type: 'jpeg', quality: 1 },
+      html2canvas:  { scale: 2, useCORS: true, logging: false },
+      jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+    };
+    window.html2pdf().set(opt).from(element).save().then(() => {
+      showToast('✅ PDF 檔案下載完成！');
+    }).catch(err => {
+      setError('PDF 產生失敗，請改用「複製供 Word 貼上」功能。');
+    });
+  };
+
+  const handleDownloadPDF = () => {
+    if (!printRef.current) return;
+    if (!window.html2pdf) {
+      const script = document.createElement('script');
+      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
+      script.onload = executePDFDownload;
+      document.body.appendChild(script);
+    } else {
+      executePDFDownload();
+    }
+  };
+
+  const handlePrint = () => {
+    showToast('🖨️ 正在啟動列印... (若無反應將自動下載 PDF)');
+    setTimeout(() => {
+      try {
+        const result = document.execCommand('print', false, null);
+        if (!result) window.print();
+      } catch (e) {
+        window.print();
+      }
+      setTimeout(() => {
+        if (!document.hidden) {
+          handleDownloadPDF();
+        }
+      }, 1500);
+    }, 150);
+  };
+
+  const renderArray = (data, renderFn) => {
+    if (!data || !Array.isArray(data) || data.length === 0) {
+      return <div className="text-gray-400 italic text-xs py-1">（此區塊未生成）</div>;
+    }
+    return data.map(renderFn);
+  };
+
+  const renderText = (textOrArray) => {
+    if (!textOrArray || textOrArray === '') {
+      return <div className="text-gray-400 italic py-2">（此區塊未生成）</div>;
+    }
+    let lines = [];
+    if (Array.isArray(textOrArray)) {
+      lines = textOrArray;
+    } else if (typeof textOrArray === 'string') {
+      lines = textOrArray.split('\n');
+    }
+    return lines.map((line, i) => {
+      if (!line.trim()) return <div key={i} className="h-2"></div>;
+      return <div key={i} className="mb-2 leading-relaxed" contentEditable suppressContentEditableWarning>{line}</div>;
+    });
+  };
+
+  // 嚴格的 JSON Schema 結構定義
+  const responseSchema = {
+    type: "OBJECT",
+    required: ["title", "part1", "part2", "part3", "part4", "part5"],
+    properties: {
+      title: { type: "STRING" },
+      part1: {
+        type: "OBJECT",
+        required: ["subtitle_en", "subtitle_zh", "vocabularies", "phrases", "main_text"],
+        properties: {
+          subtitle_en: { type: "STRING" },
+          subtitle_zh: { type: "STRING" },
+          vocabularies: { type: "ARRAY", items: { type: "OBJECT", required: ["word", "zh", "example_en", "example_zh"], properties: { word: { type: "STRING" }, zh: { type: "STRING" }, example_en: { type: "STRING" }, example_zh: { type: "STRING" } } } },
+          phrases: { type: "ARRAY", items: { type: "OBJECT", required: ["phrase", "zh", "example_en", "example_zh"], properties: { phrase: { type: "STRING" }, zh: { type: "STRING" }, example_en: { type: "STRING" }, example_zh: { type: "STRING" } } } },
+          main_text: { type: "STRING" }
+        }
+      },
+      part2: {
+        type: "OBJECT",
+        required: ["subtitle_en", "subtitle_zh", "vocabularies", "phrases", "main_text"],
+        properties: {
+          subtitle_en: { type: "STRING" },
+          subtitle_zh: { type: "STRING" },
+          vocabularies: { type: "ARRAY", items: { type: "OBJECT", required: ["word", "zh", "example_en", "example_zh"], properties: { word: { type: "STRING" }, zh: { type: "STRING" }, example_en: { type: "STRING" }, example_zh: { type: "STRING" } } } },
+          phrases: { type: "ARRAY", items: { type: "OBJECT", required: ["phrase", "zh", "example_en", "example_zh"], properties: { phrase: { type: "STRING" }, zh: { type: "STRING" }, example_en: { type: "STRING" }, example_zh: { type: "STRING" } } } },
+          main_text: { type: "STRING" }
+        }
+      },
+      part3: {
+        type: "OBJECT",
+        required: ["translation_part1", "translation_part2"],
+        properties: {
+          translation_part1: { type: "STRING" },
+          translation_part2: { type: "STRING" }
+        }
+      },
+      part4: {
+        type: "OBJECT",
+        required: ["true_false", "fill_in_blanks", "multiple_choice"],
+        properties: {
+          true_false: { type: "ARRAY", items: { type: "OBJECT", required: ["question", "answer"], properties: { question: { type: "STRING" }, answer: { type: "STRING" } } } },
+          fill_in_blanks: { type: "OBJECT", required: ["word_bank", "questions"], properties: { word_bank: { type: "ARRAY", items: { type: "STRING" } }, questions: { type: "ARRAY", items: { type: "OBJECT", required: ["question", "answer"], properties: { question: { type: "STRING" }, answer: { type: "STRING" } } } } } },
+          multiple_choice: { type: "ARRAY", items: { type: "OBJECT", required: ["question", "options", "answer"], properties: { question: { type: "STRING" }, options: { type: "ARRAY", items: { type: "STRING" } }, answer: { type: "STRING" } } } }
+        }
+      },
+      part5: {
+        type: "OBJECT",
+        required: ["title_en", "title_zh", "paragraphs", "critical_thinking"],
+        properties: {
+          title_en: { type: "STRING" },
+          title_zh: { type: "STRING" },
+          paragraphs: { type: "ARRAY", items: { type: "OBJECT", required: ["en", "zh"], properties: { en: { type: "STRING" }, zh: { type: "STRING" } } } },
+          critical_thinking: { type: "ARRAY", items: { type: "STRING" } }
+        }
+      }
+    }
+  };
+
+  const generateWorksheet = async () => {
+    if (!apiKey) {
+      setError('請先輸入您的 Google Gemini API Key。');
+      return;
+    }
+    if (!topic.trim()) {
+      setError('請輸入核心主題。');
+      return;
+    }
+
+    setIsLoading(true);
+    setError('');
+    setWorksheetData(null);
+
+    const systemPrompt = `你是一位專業的台灣國中英語教師與跨領域教材設計專家。
+請根據使用者的設定產出一份中英文跨領域學習單。
+
+【生死攸關的防當機規定，違反將導致系統崩潰】
+1. 輸出必須是合法的 JSON 格式。
+2. 【絕對禁止】在生成的任何文字內容、句子、選項中使用半形雙引號 (")！如果你需要用到引號，請一律使用單引號 (') 或全形中文引號 (「」)。
+3. 字串中【絕對不可】包含真實的換行符號 (Enter鍵)，如需換行請輸入「\\n」。
+4. 所有陣列與屬性都必須填滿真實內容，不可留空或隨便敷衍。`;
+
+    const lengthInstruction = isDialogue
+      ? `內文長度：【每個 Part】皆須嚴格控制在「${textLength}」。（1個角色說一句話算1句。Part 1 與 Part 2 皆須獨立生成此數量的對話）。`
+      : `內文長度：【每個 Part】皆須嚴格控制在「${textLength}」。（Part 1 與 Part 2 皆須獨立生成此字數的文章）。`;
+
+    const userQueryBase = `請開始製作學習單！
+條件如下：
+- 適用對象：${grade}
+- 內文程度：嚴格符合 CEFR 【${cefrLevel}】 等級。
+- 核心主題：${topic}
+- 課文形式：${format}
+- ${lengthInstruction}
+
+【產出數量要求】
+- 單字數量：Part 1 與 Part 2 各需生成 ${vocabCount} 個單字。
+- 片語數量：Part 1 與 Part 2 各需生成 ${phraseCount} 個片語。
+- 測驗題數：是非題 ${tfCount} 題、填空題 ${fibCount} 題、選擇題 ${mcCount} 題。
+
+【選擇題防呆要求】
+- 選擇題的 options 陣列中，【只填寫純文字】，絕對不要加上 (A)、(B)、A.、B. 等編號標籤！系統會自動產生編號。`;
+
+    // V15: 實作更強大的自動重試機制 (智慧回報錯誤給 AI)
+    let attempts = 0;
+    const maxRetries = 3; // 提升重試次數
+    let finalParsedData = null;
+    let currentQuery = userQueryBase;
+
+    while (attempts <= maxRetries) {
+      try {
+        if (attempts > 0) {
+          showToast(`格式稍有偏差，系統正在自動為您糾錯並重新生成 (${attempts}/${maxRetries})...`);
+          // 把錯誤原因直接告訴 AI，讓它自我修正
+          currentQuery = userQueryBase + `\n\n【系統嚴重警告：上一次生成失敗！】\n失敗原因：JSON 解析錯誤 (通常是因為你在字串中使用了未跳脫的半形雙引號 \")。\n請務必修正：所有字串內部的引號請【全部替換為單引號 (') 或全形中文引號 (「」)】，並確保輸出合法的 JSON。`;
+        }
+
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: currentQuery }] }],
+            systemInstruction: { parts: [{ text: systemPrompt }] },
+            generationConfig: {
+              temperature: 0.7 + (attempts * 0.1), 
+              maxOutputTokens: 8192,
+              responseMimeType: "application/json",
+              responseSchema: responseSchema
+            }
+          })
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error?.message || 'API 請求失敗，請檢查金鑰。');
+        }
+
+        const result = await response.json();
+        let textResponse = result?.candidates?.[0]?.content?.parts?.[0]?.text;
+        
+        if (!textResponse) throw new Error('AI 回傳的內容為空。');
+
+        let cleanText = textResponse.replace(/^```(json)?\n?/i, '').replace(/```$/i, '').trim();
+        finalParsedData = JSON.parse(cleanText);
+        break; // 成功解析 JSON，跳出迴圈
+        
+      } catch (err) {
+        console.warn(`第 ${attempts + 1} 次生成或解析失敗:`, err);
+        attempts++;
+        if (attempts > maxRetries) {
+          setError(`生成失敗：AI 產出的格式持續異常。這通常是因為字串中包含了無法解析的特殊符號。請嘗試更換「核心主題」再試一次！`);
+          setIsLoading(false);
+          return;
+        }
+      }
+    }
+
+    if (finalParsedData) {
+      setWorksheetData(finalParsedData);
+      showToast('🎉 學習單生成成功！點擊畫面右側文字可直接修改。');
+    }
+    setIsLoading(false);
+  };
+
+  const BoxTitle = ({ children }) => (
+    <div className="inline-block border border-blue-800 text-blue-900 font-bold px-1 py-0.5 text-sm mb-2 shadow-sm" contentEditable suppressContentEditableWarning>
+      {children}
+    </div>
+  );
+
+  const actualTfCount = Array.isArray(worksheetData?.part4?.true_false) ? worksheetData.part4.true_false.length : 0;
+  const actualFibCount = Array.isArray(worksheetData?.part4?.fill_in_blanks?.questions) ? worksheetData.part4.fill_in_blanks.questions.length : 0;
+
+  return (
+    <div className="flex flex-col md:flex-row h-screen bg-gray-100 font-sans overflow-hidden print:bg-white relative">
+      
+      {toast && (
+        <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-50 bg-gray-800 text-white px-6 py-3 rounded-full shadow-2xl flex items-center gap-2 animate-fade-in no-print">
+          <CheckCircle2 size={18} className="text-green-400" />
+          <span className="text-sm font-medium">{toast}</span>
+        </div>
+      )}
+
+      <style>{`
+        @keyframes fadeIn { from { opacity: 0; transform: translate(-50%, -20px); } to { opacity: 1; transform: translate(-50%, 0); } }
+        .animate-fade-in { animation: fadeIn 0.3s ease-out forwards; }
+        @media print {
+          body * { visibility: hidden; }
+          #print-area, #print-area * { visibility: visible; }
+          #print-area { position: absolute; left: 0; top: 0; width: 100%; margin: 0; padding: 0; box-shadow: none; border: none; background: white; }
+          @page { margin: 12mm; size: A4 portrait; }
+          .no-print { display: none !important; }
+          .page-break { page-break-before: always; }
+          .print-flex-row { display: flex !important; flex-direction: row !important; }
+        }
+        [contenteditable]:focus { outline: 2px dashed #4ade80; background-color: #f0fdf4; border-radius: 2px; transition: all 0.2s; }
+      `}</style>
+
+      {/* 左側設定面板 */}
+      <div className="w-full md:w-80 h-auto md:h-full flex-shrink-0 bg-white border-b md:border-r shadow-lg flex flex-col no-print z-10 max-h-[60vh] md:max-h-full">
+        <div className="p-4 md:p-5 border-b bg-blue-700 text-white flex justify-between items-center">
+          <div>
+            <h1 className="text-lg md:text-xl font-bold flex items-center gap-2">
+              <BookOpen size={20} />
+              跨域講義生成器 <span className="text-xs bg-blue-900 px-2 py-1 rounded shadow-inner">V15</span>
+            </h1>
+            <p className="text-blue-100 text-xs md:text-sm mt-1">極限抗錯穩定版</p>
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-4 md:p-5 space-y-4">
+          <div className="space-y-2">
+            <label className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+              <Key size={16} /> API Key (金鑰)
+            </label>
+            <input 
+              type="password" 
+              value={apiKey}
+              onChange={handleApiKeyChange}
+              placeholder="貼上 Gemini API Key..."
+              className="w-full p-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-gray-50"
+            />
+          </div>
+
+          <div className="border-t border-gray-200 pt-4 space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <label className="text-xs md:text-sm font-semibold text-gray-700">適用對象</label>
+                <select value={grade} onChange={e => setGrade(e.target.value)} className="w-full p-2 border rounded-md text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none">
+                  <option>國一</option>
+                  <option>國二</option>
+                  <option>國三</option>
+                </select>
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs md:text-sm font-semibold text-gray-700">CEFR 程度</label>
+                <select value={cefrLevel} onChange={e => setCefrLevel(e.target.value)} className="w-full p-2 border rounded-md text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none">
+                  <option>preA1 - 入門級</option>
+                  <option>A1</option>
+                  <option>A1~A2之間</option>
+                  <option>A2</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-sm font-semibold text-gray-700">核心主題 (跨域情境)</label>
+              <input 
+                type="text" 
+                value={topic}
+                onChange={e => setTopic(e.target.value)}
+                placeholder="例如：過度觀光生態超負荷"
+                className="w-full p-2 border rounded-md text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <label className="text-xs md:text-sm font-semibold text-gray-700">主文形式</label>
+                <select value={format} onChange={e => setFormat(e.target.value)} className="w-full p-2 border rounded-md text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none">
+                  <option>對話 Dialogue</option>
+                  <option>文章 Article</option>
+                </select>
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs md:text-sm font-semibold text-gray-700">
+                  {isDialogue ? '主文句數 (每單元)' : '主文字數 (每單元)'}
+                </label>
+                <select value={textLength} onChange={e => setTextLength(e.target.value)} className="w-full p-2 border rounded-md text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none">
+                  {lengthOptions.map(opt => (
+                    <option key={opt}>{opt}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            
+            <div className="pt-2">
+              <label className="text-xs md:text-sm font-semibold text-blue-800 border-b border-blue-200 pb-1 block mb-2">講義內容數量</label>
+              <div className="grid grid-cols-2 gap-3 mb-3">
+                <div className="space-y-1">
+                  <label className="text-[11px] md:text-xs font-semibold text-gray-600">單字數/篇</label>
+                  <input type="number" min="2" max="15" value={vocabCount} onChange={e => setVocabCount(e.target.value)} className="w-full p-1.5 border rounded-md text-sm text-center" />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[11px] md:text-xs font-semibold text-gray-600">片語數/篇</label>
+                  <input type="number" min="1" max="10" value={phraseCount} onChange={e => setPhraseCount(e.target.value)} className="w-full p-1.5 border rounded-md text-sm text-center" />
+                </div>
+              </div>
+              
+              <label className="text-xs md:text-sm font-semibold text-purple-800 border-b border-purple-200 pb-1 block mb-2">課後練習題數</label>
+              <div className="grid grid-cols-3 gap-2">
+                <div className="space-y-1">
+                  <label className="text-[11px] md:text-xs font-semibold text-gray-600">是非題</label>
+                  <input type="number" min="1" max="10" value={tfCount} onChange={e => setTfCount(e.target.value)} className="w-full p-1.5 border rounded-md text-sm text-center" />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[11px] md:text-xs font-semibold text-gray-600">填空題</label>
+                  <input type="number" min="1" max="10" value={fibCount} onChange={e => setFibCount(e.target.value)} className="w-full p-1.5 border rounded-md text-sm text-center" />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[11px] md:text-xs font-semibold text-gray-600">選擇題</label>
+                  <input type="number" min="1" max="10" value={mcCount} onChange={e => setMcCount(e.target.value)} className="w-full p-1.5 border rounded-md text-sm text-center" />
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <div className="p-4 border-t bg-gray-50">
+          <button 
+            onClick={generateWorksheet}
+            disabled={isLoading}
+            className={`w-full py-2.5 md:py-3 rounded-lg font-bold text-white shadow-md transition-all flex justify-center items-center gap-2 ${isLoading ? 'bg-blue-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 active:scale-95'}`}
+          >
+            {isLoading ? <Loader2 className="animate-spin" size={18} /> : <Settings size={18} />}
+            {isLoading ? 'AI 腦力激盪中...' : '一鍵生成學習單'}
+          </button>
+          
+          {error && (
+            <div className="mt-3 p-2.5 bg-red-100 border border-red-200 text-red-700 text-xs rounded-md flex items-start gap-1">
+              <AlertCircle size={14} className="mt-0.5 flex-shrink-0" />
+              <span>{error}</span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* 右側 預覽區 */}
+      <div className="flex-1 flex flex-col relative overflow-hidden bg-gray-300">
+        
+        <div className="h-auto py-2 md:h-14 bg-white border-b shadow-sm flex flex-wrap justify-between items-center px-4 md:px-6 gap-2 no-print z-10">
+          <div className="text-xs md:text-sm text-gray-500 font-medium hidden lg:block">
+            {worksheetData ? '💡 提示：點擊學習單上的文字可直接修改。版面已優化為雙欄列印。' : '請先設定參數並點擊生成'}
+          </div>
+          <div className="flex gap-2 w-full lg:w-auto justify-center md:justify-end overflow-x-auto pb-1 md:pb-0">
+            <button 
+              onClick={handlePrint}
+              disabled={!worksheetData}
+              className="whitespace-nowrap px-3 py-2 bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 rounded-md font-medium text-xs md:text-sm flex justify-center items-center gap-1 transition-colors disabled:opacity-50"
+            >
+              <Printer size={14} /> 列印 (PDF)
+            </button>
+            <button 
+              onClick={copyToClipboard}
+              disabled={!worksheetData}
+              className="whitespace-nowrap px-3 py-2 bg-gray-50 text-gray-700 hover:bg-gray-100 border border-gray-200 rounded-md font-medium text-xs md:text-sm flex justify-center items-center gap-1 transition-colors disabled:opacity-50"
+            >
+              <Copy size={14} /> 複製文字
+            </button>
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-4 md:p-8 flex justify-center">
+          {worksheetData ? (
+            <div 
+              id="print-area"
+              ref={printRef}
+              className="bg-white w-full max-w-[210mm] min-h-[297mm] p-[10mm] sm:p-[15mm] shadow-xl border text-gray-900 text-[13px] md:text-[14px] leading-normal"
+              style={{ fontFamily: '"Times New Roman", "Noto Sans TC", "Microsoft JhengHei", sans-serif' }}
+            >
+              
+              {/* PAGE 1: Part 1 */}
+              <div>
+                <div className="flex justify-between items-start text-blue-800 text-sm md:text-[13px] mb-4">
+                  <div className="leading-tight">
+                    <div contentEditable suppressContentEditableWarning>融入主題：{topic}</div>
+                    <div className="text-gray-500" contentEditable suppressContentEditableWarning>適用對象：{grade} ({cefrLevel})</div>
+                  </div>
+                  <div className="text-right text-gray-500" contentEditable suppressContentEditableWarning>
+                    + 課本單元標題 (可修改)
+                  </div>
+                </div>
+
+                <div className="flex flex-col sm:flex-row print-flex-row gap-8">
+                  <div className="w-full sm:w-[45%]">
+                    <BoxTitle>Part 1 重點單字</BoxTitle>
+                    <div className="mb-4">
+                      {renderArray(worksheetData?.part1?.vocabularies, (v, i) => (
+                        <div key={i} className="mb-2 break-inside-avoid text-[13px]">
+                          <div className="font-bold">
+                            {i+1}. <span contentEditable suppressContentEditableWarning>{v?.word || 'Word'}</span> <span className="font-normal text-gray-700 ml-1" contentEditable suppressContentEditableWarning>{v?.zh || '中文'}</span>
+                          </div>
+                          <div className="pl-4 text-blue-900" contentEditable suppressContentEditableWarning>{v?.example_en || 'Example.'}</div>
+                          <div className="pl-4 text-gray-600 text-xs" contentEditable suppressContentEditableWarning>{v?.example_zh || '翻譯。'}</div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <BoxTitle>Part 1 學習片語</BoxTitle>
+                    <div className="mb-4">
+                      {renderArray(worksheetData?.part1?.phrases, (p, i) => (
+                        <div key={i} className="mb-2 break-inside-avoid text-[13px]">
+                          <div className="font-bold text-red-700">
+                            {i+1}. <span contentEditable suppressContentEditableWarning>{p?.phrase || 'Phrase'}</span> <span className="font-normal text-gray-700 ml-1" contentEditable suppressContentEditableWarning>{p?.zh || '中文'}</span>
+                          </div>
+                          <div className="pl-4 text-blue-900" contentEditable suppressContentEditableWarning>{p?.example_en || 'Example.'}</div>
+                          <div className="pl-4 text-gray-600 text-xs" contentEditable suppressContentEditableWarning>{p?.example_zh || '翻譯。'}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="w-full sm:w-[55%]">
+                    <div className="flex items-start gap-3 mb-4">
+                      <div className="w-16 h-16 border border-gray-400 bg-gray-50 flex items-center justify-center text-[10px] text-gray-400 flex-shrink-0" contentEditable suppressContentEditableWarning>
+                        [QR Code]
+                      </div>
+                      <div className="flex-1">
+                        <BoxTitle>Part 1 {worksheetData?.part1?.subtitle_en}</BoxTitle>
+                        <div className="text-sm text-gray-600 italic mt-1" contentEditable suppressContentEditableWarning>
+                          ({worksheetData?.part1?.subtitle_zh})
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="text-[14px] leading-relaxed text-justify">
+                      {renderText(worksheetData?.part1?.main_text)}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="page-break"></div>
+
+              {/* PAGE 2: Part 2 */}
+              <div className="pt-4">
+                <div className="flex justify-between items-start text-blue-800 text-sm md:text-[13px] mb-4">
+                  <div className="leading-tight">
+                    <div contentEditable suppressContentEditableWarning>融入主題：{topic}</div>
+                    <div className="text-gray-500" contentEditable suppressContentEditableWarning>適用對象：{grade} ({cefrLevel})</div>
+                  </div>
+                </div>
+
+                <div className="flex flex-col sm:flex-row print-flex-row gap-8">
+                  <div className="w-full sm:w-[45%]">
+                    <BoxTitle>Part 2 重點單字</BoxTitle>
+                    <div className="mb-4">
+                      {renderArray(worksheetData?.part2?.vocabularies, (v, i) => (
+                        <div key={i} className="mb-2 break-inside-avoid text-[13px]">
+                          <div className="font-bold">
+                            {i+1}. <span contentEditable suppressContentEditableWarning>{v?.word || 'Word'}</span> <span className="font-normal text-gray-700 ml-1" contentEditable suppressContentEditableWarning>{v?.zh || '中文'}</span>
+                          </div>
+                          <div className="pl-4 text-blue-900" contentEditable suppressContentEditableWarning>{v?.example_en || 'Example.'}</div>
+                          <div className="pl-4 text-gray-600 text-xs" contentEditable suppressContentEditableWarning>{v?.example_zh || '翻譯。'}</div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <BoxTitle>Part 2 學習片語</BoxTitle>
+                    <div className="mb-4">
+                      {renderArray(worksheetData?.part2?.phrases, (p, i) => (
+                        <div key={i} className="mb-2 break-inside-avoid text-[13px]">
+                          <div className="font-bold text-red-700">
+                            {i+1}. <span contentEditable suppressContentEditableWarning>{p?.phrase || 'Phrase'}</span> <span className="font-normal text-gray-700 ml-1" contentEditable suppressContentEditableWarning>{p?.zh || '中文'}</span>
+                          </div>
+                          <div className="pl-4 text-blue-900" contentEditable suppressContentEditableWarning>{p?.example_en || 'Example.'}</div>
+                          <div className="pl-4 text-gray-600 text-xs" contentEditable suppressContentEditableWarning>{p?.example_zh || '翻譯。'}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="w-full sm:w-[55%]">
+                    <div className="flex items-start gap-3 mb-4">
+                      <div className="w-16 h-16 border border-gray-400 bg-gray-50 flex items-center justify-center text-[10px] text-gray-400 flex-shrink-0" contentEditable suppressContentEditableWarning>
+                        [QR Code]
+                      </div>
+                      <div className="flex-1">
+                        <BoxTitle>Part 2 {worksheetData?.part2?.subtitle_en}</BoxTitle>
+                        <div className="text-sm text-gray-600 italic mt-1" contentEditable suppressContentEditableWarning>
+                          ({worksheetData?.part2?.subtitle_zh})
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="text-[14px] leading-relaxed text-justify">
+                      {renderText(worksheetData?.part2?.main_text)}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="page-break"></div>
+
+              {/* PAGE 3: Part 3 (Left) & Part 4 (Right) */}
+              <div className="pt-4 flex flex-col sm:flex-row print-flex-row gap-8">
+                
+                <div className="w-full sm:w-[45%]">
+                  <BoxTitle>Part 3 中文翻譯</BoxTitle>
+                  
+                  <div className="mt-4 mb-6">
+                    <h3 className="font-bold text-gray-900 mb-1" contentEditable suppressContentEditableWarning>
+                      {worksheetData?.part1?.subtitle_en} ({worksheetData?.part1?.subtitle_zh})
+                    </h3>
+                    <div className="text-gray-700 text-[13px] leading-relaxed text-justify">
+                      {renderText(worksheetData?.part3?.translation_part1)}
+                    </div>
+                  </div>
+                  
+                  <div className="mb-4">
+                    <h3 className="font-bold text-gray-900 mb-1" contentEditable suppressContentEditableWarning>
+                      {worksheetData?.part2?.subtitle_en} ({worksheetData?.part2?.subtitle_zh})
+                    </h3>
+                    <div className="text-gray-700 text-[13px] leading-relaxed text-justify">
+                      {renderText(worksheetData?.part3?.translation_part2)}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="w-full sm:w-[55%]">
+                  <BoxTitle>Part 4 Exercise 練習題</BoxTitle>
+
+                  <div className="mt-4 mb-6 break-inside-avoid">
+                    <h3 className="font-bold text-gray-900 mb-3" contentEditable suppressContentEditableWarning>一、是非題 (True or False)</h3>
+                    <div className="text-xs text-gray-500 mb-2" contentEditable suppressContentEditableWarning>請判斷描述是否正確。正確請選 T，錯誤請選 F。</div>
+                    {renderArray(worksheetData?.part4?.true_false, (q, i) => (
+                      <div key={i} className="mb-2 flex gap-2">
+                        <span className="font-mono mt-0.5">(   )</span>
+                        <span className="flex-1" contentEditable suppressContentEditableWarning>{i+1}. {q?.question || '題目區塊'}</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="mb-6 break-inside-avoid border-t border-gray-300 pt-4">
+                    <h3 className="font-bold text-gray-900 mb-2" contentEditable suppressContentEditableWarning>二、填空題 (Fill in the Blanks)</h3>
+                    <div className="text-xs text-gray-500 mb-2" contentEditable suppressContentEditableWarning>請從下方單字中，選出最適合的填入空格中。</div>
+                    <div className="border border-black p-1.5 text-center mb-4 font-mono text-[13px]" contentEditable suppressContentEditableWarning>
+                      單字：{Array.isArray(worksheetData?.part4?.fill_in_blanks?.word_bank) && worksheetData.part4.fill_in_blanks.word_bank.length > 0
+                        ? worksheetData.part4.fill_in_blanks.word_bank.join(" / ") 
+                        : '單字庫'}
+                    </div>
+                    {renderArray(worksheetData?.part4?.fill_in_blanks?.questions, (q, i) => (
+                      <div key={i} className="mb-3 flex gap-2">
+                        <span>{i + 1 + actualTfCount}.</span>
+                        <span contentEditable suppressContentEditableWarning className="flex-1">{q?.question || '題目 ___'}</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="mb-4 break-inside-avoid border-t border-gray-300 pt-4">
+                    <h3 className="font-bold text-gray-900 mb-3" contentEditable suppressContentEditableWarning>三、選擇題 (Multiple Choice)</h3>
+                    {renderArray(worksheetData?.part4?.multiple_choice, (q, i) => (
+                      <div key={i} className="mb-5">
+                        <div className="mb-2 flex gap-2">
+                          <span>{i + 1 + actualTfCount + actualFibCount}.</span>
+                          <span contentEditable suppressContentEditableWarning>{q?.question || '題目區塊'}</span>
+                        </div>
+                        <div className="pl-5 grid grid-cols-1 gap-1">
+                          {renderArray(Array.isArray(q?.options) && q.options.length > 0 ? q.options : ['選項A','選項B','選項C','選項D'], (opt, j) => {
+                            const cleanOpt = typeof opt === 'string' ? opt.replace(/^[\(（]?[A-D][\)）\.、]\s*/i, '') : opt;
+                            return (
+                              <div key={j} contentEditable suppressContentEditableWarning>({['A','B','C','D'][j]}) {cleanOpt}</div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                </div>
+              </div>
+
+              <div className="page-break"></div>
+
+              {/* PAGE 4: Part 5 (Full Width) */}
+              <div className="pt-4">
+                <BoxTitle>Part 5 延伸閱讀</BoxTitle>
+                <div className="font-bold text-[15px] text-gray-900 mt-2 mb-4" contentEditable suppressContentEditableWarning>
+                   {worksheetData?.part5?.title_en || 'Title'} {worksheetData?.part5?.title_zh || '延伸閱讀標題'}
+                </div>
+                
+                <div className="mb-8 leading-relaxed text-justify text-[14px]">
+                  {renderArray(worksheetData?.part5?.paragraphs, (p, i) => (
+                    <div key={i} className="mb-4 break-inside-avoid">
+                      <div className="font-medium text-gray-900 mb-1" contentEditable suppressContentEditableWarning>{p?.en || '英文段落'}</div>
+                      <div className="text-gray-700 text-[13px]" contentEditable suppressContentEditableWarning>{p?.zh || '中文翻譯'}</div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="break-inside-avoid pt-2">
+                  <div className="font-bold text-[15px] text-gray-900 mb-4" contentEditable suppressContentEditableWarning>
+                    ◇ 批判性思考簡答題 (Critical Thinking Questions)
+                  </div>
+                  <div className="text-gray-600 text-[13px] italic mb-6" contentEditable suppressContentEditableWarning>
+                    可以寫中文。如果可以，請盡量使用英文回答：
+                  </div>
+                  {renderArray(worksheetData?.part5?.critical_thinking, (q, i) => (
+                    <div key={i} className="mb-8 pl-4">
+                      <div className="font-bold text-gray-800" contentEditable suppressContentEditableWarning>{i+1}. {q}</div>
+                      <div className="mt-6 border-b border-gray-400 w-full"></div>
+                      <div className="mt-6 border-b border-gray-400 w-full"></div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* 解答區 (最末端) */}
+              <div className="mt-12 pt-4 border-t border-dashed border-gray-400 text-xs text-gray-500 break-inside-avoid text-center">
+                <div className="font-bold mb-2">P.3 答案區 (Teacher's Key)</div>
+                <span className="mr-4">是非題：{Array.isArray(worksheetData?.part4?.true_false) ? worksheetData.part4.true_false.map((q, i) => `${i + 1}.${q?.answer || '?'}`).join('  ') : ''}</span>
+                <span className="mr-4">填空題：{Array.isArray(worksheetData?.part4?.fill_in_blanks?.questions) ? worksheetData.part4.fill_in_blanks.questions.map((q, i) => `${i + 1 + actualTfCount}.${q?.answer || '?'}`).join('  ') : ''}</span>
+                <span>選擇題：{Array.isArray(worksheetData?.part4?.multiple_choice) ? worksheetData.part4.multiple_choice.map((q, i) => `${i + 1 + actualTfCount + actualFibCount}.(${q?.answer || '?'})`).join('  ') : ''}</span>
+              </div>
+
+            </div>
+          ) : (
+            // 初始空狀態畫面
+            <div className="h-full flex flex-col items-center justify-center text-gray-400 space-y-4 px-4 text-center">
+              <BookOpen size={48} className="opacity-20 md:w-16 md:h-16" />
+              <p className="text-base md:text-lg text-gray-500 font-medium">您的跨域講義將在此顯示</p>
+              <ul className="text-sm space-y-2 text-gray-400">
+                <li>1. 貼上 API 金鑰</li>
+                <li>2. 設定單字數、程度與字數</li>
+                <li>3. 點擊「一鍵生成」</li>
+              </ul>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
