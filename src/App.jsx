@@ -65,12 +65,12 @@ export default function App() {
   const [fibCount, setFibCount] = useState(4);
   const [mcCount, setMcCount] = useState(3);
 
-  // V17: 延伸閱讀設定
+  // 延伸閱讀設定
   const [extReadingLength, setExtReadingLength] = useState('100~150字');
   const [extReadingQCount, setExtReadingQCount] = useState(3);
   const [extReadingQLang, setExtReadingQLang] = useState('中文');
 
-  // V17: 文法複選狀態
+  // 文法複選狀態
   const [selectedGrammars, setSelectedGrammars] = useState([]);
   const [isGrammarOpen, setIsGrammarOpen] = useState(false);
 
@@ -261,7 +261,6 @@ export default function App() {
       ? `Part 1 與 Part 2 內文長度：【每個 Part】皆須獨立並嚴格控制在「${textLength}」。（1個角色說一句話算1句）。`
       : `Part 1 與 Part 2 內文長度：【每個 Part】皆須獨立並嚴格控制在「${textLength}」。`;
 
-    // V17: 組合更精確的要求
     const userQueryBase = `請開始製作講義！
 條件如下：
 - 適用對象：${grade}
@@ -292,8 +291,8 @@ ${grammarInstruction}
     while (attempts <= maxRetries) {
       try {
         if (attempts > 0) {
-          showToast(`格式稍有偏差，系統正在自動為您糾錯並重新生成 (${attempts}/${maxRetries})...`);
-          currentQuery = userQueryBase + `\n\n【系統嚴重警告：上一次生成失敗！】\n失敗原因：JSON 解析錯誤 (通常是因為你在字串中使用了未跳脫的半形雙引號 \")。\n請務必修正：所有字串內部的引號請【全部替換為單引號 (') 或全形中文引號 (「」)】，並確保輸出合法的 JSON。`;
+          showToast(`正在排除特殊符號並啟動自動糾錯 (${attempts}/${maxRetries})...`);
+          currentQuery = userQueryBase + `\n\n【系統嚴重警告：上一次生成失敗！】\n失敗原因：JSON 解析錯誤。這通常是因為你加入了額外的對話廢話，或是字串中包含了未跳脫的雙引號(\")。\n請務必修正：【不要】在開頭說「好的，這是我設計的講義」等廢話，直接輸出 JSON 格式即可。所有內部引號請替換為單引號 (') 或全形中文引號 (「」)。`;
         }
 
         const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
@@ -305,7 +304,6 @@ ${grammarInstruction}
             generationConfig: {
               temperature: 0.7 + (attempts * 0.1), 
               maxOutputTokens: 8192,
-              responseMimeType: "application/json",
             }
           })
         });
@@ -320,7 +318,18 @@ ${grammarInstruction}
         
         if (!textResponse) throw new Error('AI 回傳的內容為空。');
 
-        let cleanText = textResponse.replace(/^```(json)?\n?/i, '').replace(/```$/i, '').trim();
+        // V18 終極暴力 JSON 萃取與修復法：直接鎖定首尾的大括號
+        let cleanText = textResponse;
+        const startIndex = cleanText.indexOf('{');
+        const endIndex = cleanText.lastIndexOf('}');
+        
+        if (startIndex !== -1 && endIndex !== -1) {
+          cleanText = cleanText.substring(startIndex, endIndex + 1);
+        }
+        
+        // 自動修復 AI 常常犯的「陣列尾端多餘逗號」錯誤 (這是最常見的 Syntax Error 原因)
+        cleanText = cleanText.replace(/,\s*([\]}])/g, '$1');
+
         finalParsedData = JSON.parse(cleanText);
         break; 
         
@@ -328,7 +337,7 @@ ${grammarInstruction}
         console.warn(`第 ${attempts + 1} 次生成或解析失敗:`, err);
         attempts++;
         if (attempts > maxRetries) {
-          setError(`生成失敗：AI 產出的格式持續異常。這通常是因為字串中包含了無法解析的特殊符號。請嘗試更換「核心主題」再試一次！`);
+          setError(`生成失敗：AI 產出的格式持續異常。這通常是因為字串中包含了無法解析的特殊符號。請嘗試減少「題數」或更換「核心主題」再試一次！`);
           setIsLoading(false);
           return;
         }
@@ -337,7 +346,7 @@ ${grammarInstruction}
 
     if (finalParsedData) {
       setWorksheetData(finalParsedData);
-      showToast('🎉 V17 講義生成成功！點擊畫面右側文字可直接修改。');
+      showToast('🎉 V18 講義生成成功！點擊畫面右側文字可直接修改。');
     }
     setIsLoading(false);
   };
@@ -389,9 +398,9 @@ ${grammarInstruction}
         <div className="p-4 border-b bg-blue-700 text-white flex flex-col justify-center">
           <h1 className="text-xl font-bold flex items-center gap-2">
             <BookOpen size={22} />
-            跨域講義生成器 <span className="text-xs bg-blue-900 border border-blue-500 px-2 py-0.5 rounded shadow-sm">V17</span>
+            跨域講義生成器 <span className="text-xs bg-blue-900 border border-blue-500 px-2 py-0.5 rounded shadow-sm">V18</span>
           </h1>
-          <p className="text-blue-100 text-sm mt-1">專業版 - 文法複選與進階延伸閱讀</p>
+          <p className="text-blue-100 text-sm mt-1">專業版 - 極限萃取抗錯系統</p>
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 md:p-5 space-y-5 custom-scrollbar">
@@ -435,7 +444,7 @@ ${grammarInstruction}
             />
           </div>
 
-          {/* V17: 文法複選選單 */}
+          {/* 文法複選選單 */}
           <div className="space-y-1 relative" ref={grammarDropdownRef}>
             <label className="text-sm font-bold text-gray-700 flex justify-between">
               <span>指定文法句型 (可複選)</span>
@@ -486,7 +495,7 @@ ${grammarInstruction}
             </div>
           </div>
 
-          {/* V17: 延伸閱讀獨立設定 */}
+          {/* 延伸閱讀獨立設定 */}
           <div className="pt-2">
             <div className="text-orange-600 font-bold border-b border-orange-200 pb-1 mb-3 text-sm">Part 5 延伸閱讀設定</div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
@@ -850,7 +859,7 @@ ${grammarInstruction}
           ) : (
             <div className="h-full flex flex-col items-center justify-center text-gray-400 space-y-4 px-4 text-center">
               <BookOpen size={48} className="opacity-20 md:w-16 md:h-16" />
-              <p className="text-base md:text-lg text-gray-500 font-medium">專屬 V17 專業旗艦版已就緒</p>
+              <p className="text-base md:text-lg text-gray-500 font-medium">專屬 V18 極限萃取版已就緒</p>
               <ul className="text-sm space-y-2 text-gray-400">
                 <li>1. 貼上 API 金鑰</li>
                 <li>2. 設定單字、文法與延伸閱讀字數</li>
