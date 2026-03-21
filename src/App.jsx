@@ -67,6 +67,7 @@ export default function App() {
 
   // 延伸閱讀設定
   const [extReadingLength, setExtReadingLength] = useState('100~150字');
+  const [extReadingTextLang, setExtReadingTextLang] = useState('中英文並陳'); // V22 新增：延伸閱讀主文語言
   const [extReadingQCount, setExtReadingQCount] = useState(3);
   const [extReadingQLang, setExtReadingQLang] = useState('中文');
 
@@ -91,7 +92,6 @@ export default function App() {
     const savedKey = localStorage.getItem('gemini_api_key');
     if (savedKey) setApiKey(savedKey);
 
-    // 處理點擊外部關閉文法選單
     const handleClickOutside = (event) => {
       if (grammarDropdownRef.current && !grammarDropdownRef.current.contains(event.target)) {
         setIsGrammarOpen(false);
@@ -197,6 +197,63 @@ export default function App() {
     });
   };
 
+  const responseSchema = {
+    type: "OBJECT",
+    required: ["title", "part1", "part2", "part3", "part4", "part5"],
+    properties: {
+      title: { type: "STRING" },
+      part1: {
+        type: "OBJECT",
+        required: ["subtitle_en", "subtitle_zh", "vocabularies", "phrases", "main_text"],
+        properties: {
+          subtitle_en: { type: "STRING" },
+          subtitle_zh: { type: "STRING" },
+          vocabularies: { type: "ARRAY", items: { type: "OBJECT", required: ["word", "zh", "example_en", "example_zh"], properties: { word: { type: "STRING" }, zh: { type: "STRING" }, example_en: { type: "STRING" }, example_zh: { type: "STRING" } } } },
+          phrases: { type: "ARRAY", items: { type: "OBJECT", required: ["phrase", "zh", "example_en", "example_zh"], properties: { phrase: { type: "STRING" }, zh: { type: "STRING" }, example_en: { type: "STRING" }, example_zh: { type: "STRING" } } } },
+          main_text: { type: "STRING" }
+        }
+      },
+      part2: {
+        type: "OBJECT",
+        required: ["subtitle_en", "subtitle_zh", "vocabularies", "phrases", "main_text"],
+        properties: {
+          subtitle_en: { type: "STRING" },
+          subtitle_zh: { type: "STRING" },
+          vocabularies: { type: "ARRAY", items: { type: "OBJECT", required: ["word", "zh", "example_en", "example_zh"], properties: { word: { type: "STRING" }, zh: { type: "STRING" }, example_en: { type: "STRING" }, example_zh: { type: "STRING" } } } },
+          phrases: { type: "ARRAY", items: { type: "OBJECT", required: ["phrase", "zh", "example_en", "example_zh"], properties: { phrase: { type: "STRING" }, zh: { type: "STRING" }, example_en: { type: "STRING" }, example_zh: { type: "STRING" } } } },
+          main_text: { type: "STRING" }
+        }
+      },
+      part3: {
+        type: "OBJECT",
+        required: ["translation_part1", "translation_part2"],
+        properties: {
+          translation_part1: { type: "STRING" },
+          translation_part2: { type: "STRING" }
+        }
+      },
+      part4: {
+        type: "OBJECT",
+        required: ["true_false", "fill_in_blanks", "multiple_choice"],
+        properties: {
+          true_false: { type: "ARRAY", items: { type: "OBJECT", required: ["question", "answer"], properties: { question: { type: "STRING" }, answer: { type: "STRING" } } } },
+          fill_in_blanks: { type: "OBJECT", required: ["word_bank", "questions"], properties: { word_bank: { type: "ARRAY", items: { type: "STRING" } }, questions: { type: "ARRAY", items: { type: "OBJECT", required: ["question", "answer"], properties: { question: { type: "STRING" }, answer: { type: "STRING" } } } } } },
+          multiple_choice: { type: "ARRAY", items: { type: "OBJECT", required: ["question", "options", "answer"], properties: { question: { type: "STRING" }, options: { type: "ARRAY", items: { type: "STRING" } }, answer: { type: "STRING" } } } }
+        }
+      },
+      part5: {
+        type: "OBJECT",
+        required: ["title_en", "title_zh", "paragraphs", "critical_thinking"],
+        properties: {
+          title_en: { type: "STRING" },
+          title_zh: { type: "STRING" },
+          paragraphs: { type: "ARRAY", items: { type: "OBJECT", required: ["en", "zh"], properties: { en: { type: "STRING" }, zh: { type: "STRING" } } } },
+          critical_thinking: { type: "ARRAY", items: { type: "STRING" } }
+        }
+      }
+    }
+  };
+
   const generateWorksheet = async () => {
     if (!apiKey) return setError('請先輸入您的 Google Gemini API Key。');
     if (!topic.trim()) return setError('請輸入核心主題。');
@@ -208,58 +265,17 @@ export default function App() {
     const systemPrompt = `你是一位專業的台灣國中英語教師與跨領域教材設計專家。
 請根據使用者的設定產出一份中英文跨領域學習單。
 
-【生死攸關的防當機規定，違反將導致系統崩潰】
-1. 輸出必須是合法的 JSON 格式。
-2. 【絕對禁止】在生成的任何文字內容、句子、選項中使用半形雙引號 (")！如果你需要用到引號，請一律使用單引號 (') 或全形中文引號 (「」)。
-3. 字串中【絕對不可】包含真實的換行符號 (Enter鍵)，如需換行請輸入「\\n」。
-4. 所有陣列與屬性都必須填滿真實內容，不可留空或隨便敷衍。
-
-【JSON 結構規定】
-{
-  "title": "學習單的創意標題",
-  "part1": {
-    "subtitle_en": "Part 1 英文副標",
-    "subtitle_zh": "Part 1 中文副標",
-    "vocabularies": [ { "word": "單字1", "zh": "中文1", "example_en": "英文例句", "example_zh": "例句翻譯" } ],
-    "phrases": [ { "phrase": "片語1", "zh": "中文1", "example_en": "英文例句", "example_zh": "例句翻譯" } ],
-    "main_text": "第一部分的課文內容。\\n若是對話請清楚標示人名。\\n可使用 \\n 換行。"
-  },
-  "part2": {
-    "subtitle_en": "Part 2 英文副標",
-    "subtitle_zh": "Part 2 中文副標",
-    "vocabularies": [ ...與上面相同格式... ],
-    "phrases": [ ...與上面相同格式... ],
-    "main_text": "第二部分的課文內容。"
-  },
-  "part3": {
-    "translation_part1": "第一部分課文的完整中文翻譯。",
-    "translation_part2": "第二部分課文的完整中文翻譯。"
-  },
-  "part4": {
-    "true_false": [ { "question": "英文是非題 1", "answer": "T" } ],
-    "fill_in_blanks": {
-      "word_bank": ["apple", "banana"],
-      "questions": [ { "question": "I have an ___.", "answer": "apple" } ]
-    },
-    "multiple_choice": [
-      { "question": "英文選擇題 1", "options": ["選項A", "選項B", "選項C", "選項D"], "answer": "A" }
-    ]
-  },
-  "part5": {
-    "title_en": "延伸閱讀英文標題",
-    "title_zh": "延伸閱讀中文標題",
-    "paragraphs": [ { "en": "英文第一段...", "zh": "中文第一段翻譯..." } ],
-    "critical_thinking": [ "思考題一(依指定語言撰寫)？" ]
-  }
-}`;
+【重要規定】
+1. 所有陣列與屬性都必須填滿「真實且完整的英文與中文內容」，絕對不可以回傳空陣列 [] 或空字串！
+2. 若使用者要求「長篇」文章或對話，請充分發揮創意，提供豐富且具有深度的完整內容，不要敷衍。`;
 
     const grammarInstruction = selectedGrammars.length > 0 
       ? `- 核心文法：嚴格要求在此學習單的 Part 1 與 Part 2 主文 (main_text) 中，必須自然地融入以下文法句型：【${selectedGrammars.join('、')}】！` 
       : `- 核心文法：無特定限制，請依循該年級的一般文法難度撰寫。`;
 
     const lengthInstruction = isDialogue
-      ? `Part 1 與 Part 2 內文長度：【每個 Part】皆須獨立並嚴格控制在「${textLength}」。（1個角色說一句話算1句）。`
-      : `Part 1 與 Part 2 內文長度：【每個 Part】皆須獨立並嚴格控制在「${textLength}」。`;
+      ? `Part 1 與 Part 2 內文長度：【每個 Part】皆須獨立並盡可能達到「${textLength}」。（1個角色說一句話算1句）。`
+      : `Part 1 與 Part 2 內文長度：【每個 Part】皆須獨立並盡可能達到「${textLength}」。`;
 
     const userQueryBase = `請開始製作講義！
 條件如下：
@@ -270,13 +286,14 @@ ${grammarInstruction}
 - 課文形式：${format}
 - ${lengthInstruction}
 
-【產出數量要求】
-- 單字數量：Part 1 與 Part 2 各需生成 ${vocabCount} 個單字。
-- 片語數量：Part 1 與 Part 2 各需生成 ${phraseCount} 個片語。
+【產出數量要求】(絕不可交白卷)
+- 單字數量：Part 1 與 Part 2 各需真實生成 ${vocabCount} 個單字，包含中英例句。
+- 片語數量：Part 1 與 Part 2 各需真實生成 ${phraseCount} 個片語，包含中英例句。
 - 測驗題數：是非題 ${tfCount} 題、填空題 ${fibCount} 題、選擇題 ${mcCount} 題。
 
 【Part 5 延伸閱讀專屬要求】
-- 延伸閱讀字數：嚴格控制在【${extReadingLength}】左右。
+- 延伸閱讀字數：內容須豐富並達到【${extReadingLength}】左右。
+- 延伸閱讀主文：請照常產生英文與中文的對照段落 (前端會依照使用者的選擇來過濾顯示語言)。
 - 批判性思考題數：嚴格生成【${extReadingQCount}】題。
 - 批判性思考語言：題目必須使用【${extReadingQLang}】撰寫。
 
@@ -284,15 +301,16 @@ ${grammarInstruction}
 - 選擇題的 options 陣列中，【只填寫純文字】，絕對不要加上 (A)、(B)、A.、B. 等編號標籤！系統會自動產生編號。`;
 
     let attempts = 0;
-    const maxRetries = 3; 
+    const maxRetries = 2; 
     let finalParsedData = null;
     let currentQuery = userQueryBase;
 
     while (attempts <= maxRetries) {
       try {
         if (attempts > 0) {
-          showToast(`正在排除特殊符號並啟動自動糾錯 (${attempts}/${maxRetries})...`);
-          currentQuery = userQueryBase + `\n\n【系統嚴重警告：上一次生成失敗！】\n失敗原因：JSON 解析錯誤。這通常是因為你加入了額外的對話廢話，或是字串中包含了未跳脫的雙引號(\")。\n請務必修正：【不要】在開頭說「好的，這是我設計的講義」等廢話，直接輸出 JSON 格式即可。所有內部引號請替換為單引號 (') 或全形中文引號 (「」)。`;
+          showToast(`長文生成中，系統正在確保內容完整性 (${attempts}/${maxRetries})...`);
+        } else if (textLength.includes('長') || extReadingLength.includes('250')) {
+          showToast(`⏳ 正在為您生成長篇內容，這可能需要稍多時間，請耐心等候...`);
         }
 
         const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
@@ -302,15 +320,17 @@ ${grammarInstruction}
             contents: [{ parts: [{ text: currentQuery }] }],
             systemInstruction: { parts: [{ text: systemPrompt }] },
             generationConfig: {
-              temperature: 0.7 + (attempts * 0.1), 
+              temperature: 0.3 + (attempts * 0.1), 
               maxOutputTokens: 8192,
+              responseMimeType: "application/json",
+              responseSchema: responseSchema 
             }
           })
         });
 
         if (!response.ok) {
           const errorData = await response.json();
-          throw new Error(errorData.error?.message || 'API 請求失敗，請檢查金鑰。');
+          throw new Error(errorData.error?.message || 'API 請求失敗，請檢查金鑰或網路。');
         }
 
         const result = await response.json();
@@ -318,18 +338,7 @@ ${grammarInstruction}
         
         if (!textResponse) throw new Error('AI 回傳的內容為空。');
 
-        // V18 終極暴力 JSON 萃取與修復法：直接鎖定首尾的大括號
-        let cleanText = textResponse;
-        const startIndex = cleanText.indexOf('{');
-        const endIndex = cleanText.lastIndexOf('}');
-        
-        if (startIndex !== -1 && endIndex !== -1) {
-          cleanText = cleanText.substring(startIndex, endIndex + 1);
-        }
-        
-        // 自動修復 AI 常常犯的「陣列尾端多餘逗號」錯誤 (這是最常見的 Syntax Error 原因)
-        cleanText = cleanText.replace(/,\s*([\]}])/g, '$1');
-
+        let cleanText = textResponse.replace(/^```(json)?\n?/i, '').replace(/```$/i, '').trim();
         finalParsedData = JSON.parse(cleanText);
         break; 
         
@@ -337,7 +346,7 @@ ${grammarInstruction}
         console.warn(`第 ${attempts + 1} 次生成或解析失敗:`, err);
         attempts++;
         if (attempts > maxRetries) {
-          setError(`生成失敗：AI 產出的格式持續異常。這通常是因為字串中包含了無法解析的特殊符號。請嘗試減少「題數」或更換「核心主題」再試一次！`);
+          setError(`生成失敗：${err.message}。長文生成需要極高的穩定度，請稍後再試一次！`);
           setIsLoading(false);
           return;
         }
@@ -346,7 +355,7 @@ ${grammarInstruction}
 
     if (finalParsedData) {
       setWorksheetData(finalParsedData);
-      showToast('🎉 V18 講義生成成功！點擊畫面右側文字可直接修改。');
+      showToast('🎉 V22 講義生成成功！點擊畫面右側文字可直接修改。');
     }
     setIsLoading(false);
   };
@@ -359,9 +368,6 @@ ${grammarInstruction}
 
   const actualTfCount = Array.isArray(worksheetData?.part4?.true_false) ? worksheetData.part4.true_false.length : 0;
   const actualFibCount = Array.isArray(worksheetData?.part4?.fill_in_blanks?.questions) ? worksheetData.part4.fill_in_blanks.questions.length : 0;
-
-  // 整理選取的文法標籤 (用於講義表頭顯示)
-  const grammarLabels = selectedGrammars.map(g => g.split('：')[0]).join(', ');
 
   return (
     <div className="flex flex-col md:flex-row h-screen bg-gray-100 font-sans overflow-hidden print:bg-white relative">
@@ -386,7 +392,6 @@ ${grammarInstruction}
           .print-flex-row { display: flex !important; flex-direction: row !important; }
         }
         [contenteditable]:focus { outline: 2px dashed #4ade80; background-color: #f0fdf4; border-radius: 2px; transition: all 0.2s; }
-        /* 隱藏原生捲軸 */
         .custom-scrollbar::-webkit-scrollbar { width: 6px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: #f1f1f1; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #c1c1c1; border-radius: 4px; }
@@ -398,9 +403,9 @@ ${grammarInstruction}
         <div className="p-4 border-b bg-blue-700 text-white flex flex-col justify-center">
           <h1 className="text-xl font-bold flex items-center gap-2">
             <BookOpen size={22} />
-            跨域講義生成器 <span className="text-xs bg-blue-900 border border-blue-500 px-2 py-0.5 rounded shadow-sm">V18</span>
+            跨域講義生成器 <span className="text-xs bg-blue-900 border border-blue-500 px-2 py-0.5 rounded shadow-sm">V22</span>
           </h1>
-          <p className="text-blue-100 text-sm mt-1">專業版 - 極限萃取抗錯系統</p>
+          <p className="text-blue-100 text-sm mt-1">專業版 - 完整標頭與閱讀客製化</p>
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 md:p-5 space-y-5 custom-scrollbar">
@@ -417,7 +422,6 @@ ${grammarInstruction}
             />
           </div>
 
-          {/* 基礎設定 */}
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
               <label className="text-sm font-bold text-gray-700">適用對象</label>
@@ -444,7 +448,6 @@ ${grammarInstruction}
             />
           </div>
 
-          {/* 文法複選選單 */}
           <div className="space-y-1 relative" ref={grammarDropdownRef}>
             <label className="text-sm font-bold text-gray-700 flex justify-between">
               <span>指定文法句型 (可複選)</span>
@@ -457,7 +460,7 @@ ${grammarInstruction}
               onClick={() => setIsGrammarOpen(!isGrammarOpen)}
             >
               <span className="truncate text-gray-700">
-                {selectedGrammars.length === 0 ? "未指定 (自由發揮)" : `已選 ${selectedGrammars.length} 項：${grammarLabels}`}
+                {selectedGrammars.length === 0 ? "未指定 (自由發揮)" : `已選 ${selectedGrammars.length} 項`}
               </span>
               <ChevronDown size={16} className={`transition-transform ${isGrammarOpen ? 'rotate-180' : ''}`} />
             </div>
@@ -495,7 +498,6 @@ ${grammarInstruction}
             </div>
           </div>
 
-          {/* 延伸閱讀獨立設定 */}
           <div className="pt-2">
             <div className="text-orange-600 font-bold border-b border-orange-200 pb-1 mb-3 text-sm">Part 5 延伸閱讀設定</div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
@@ -510,17 +512,27 @@ ${grammarInstruction}
                 </select>
               </div>
               <div className="space-y-1">
-                <label className="text-xs font-bold text-gray-600">出題語言</label>
+                {/* V22: 主文顯示語言切換 */}
+                <label className="text-xs font-bold text-gray-600">主文語言</label>
+                <select value={extReadingTextLang} onChange={e => setExtReadingTextLang(e.target.value)} className="w-full p-1.5 border rounded-md text-sm bg-white outline-none">
+                  <option>英文</option>
+                  <option>中英文並陳</option>
+                </select>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-gray-600">出題語言 (思考題)</label>
                 <select value={extReadingQLang} onChange={e => setExtReadingQLang(e.target.value)} className="w-full p-1.5 border rounded-md text-sm bg-white outline-none">
                   <option>英文</option>
                   <option>中文</option>
                   <option>中英文並陳</option>
                 </select>
               </div>
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs font-bold text-gray-600">思考題數 (1~10題)</label>
-              <input type="number" min="1" max="10" value={extReadingQCount} onChange={e => setExtReadingQCount(e.target.value)} className="w-full p-1.5 border rounded-md text-sm" />
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-gray-600">思考題數 (1~10題)</label>
+                <input type="number" min="1" max="10" value={extReadingQCount} onChange={e => setExtReadingQCount(e.target.value)} className="w-full p-1.5 border rounded-md text-sm" />
+              </div>
             </div>
           </div>
 
@@ -613,9 +625,14 @@ ${grammarInstruction}
                   <div className="leading-tight">
                     <div contentEditable suppressContentEditableWarning>融入主題：{topic}</div>
                     <div className="text-gray-500" contentEditable suppressContentEditableWarning>
-                      適用對象：{grade} ({cefrLevel}) 
-                      {selectedGrammars.length > 0 && ` | 文法：${grammarLabels}`}
+                      適用對象：{grade} ({cefrLevel})
                     </div>
+                    {/* V22: 完整文法標示移至此處 */}
+                    {selectedGrammars.length > 0 && (
+                      <div className="text-gray-500 mt-1" contentEditable suppressContentEditableWarning>
+                        文法：{selectedGrammars.join('、')}
+                      </div>
+                    )}
                   </div>
                   <div className="text-right text-gray-500" contentEditable suppressContentEditableWarning>
                     + 課本單元標題 (可修改)
@@ -680,8 +697,13 @@ ${grammarInstruction}
                     <div contentEditable suppressContentEditableWarning>融入主題：{topic}</div>
                     <div className="text-gray-500" contentEditable suppressContentEditableWarning>
                       適用對象：{grade} ({cefrLevel})
-                      {selectedGrammars.length > 0 && ` | 文法：${grammarLabels}`}
                     </div>
+                    {/* V22: 完整文法標示移至此處 */}
+                    {selectedGrammars.length > 0 && (
+                      <div className="text-gray-500 mt-1" contentEditable suppressContentEditableWarning>
+                        文法：{selectedGrammars.join('、')}
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -821,11 +843,14 @@ ${grammarInstruction}
                    {worksheetData?.part5?.title_en || 'Title'} {worksheetData?.part5?.title_zh || '延伸閱讀標題'}
                 </div>
                 
+                {/* V22: 支援自動過濾語言 */}
                 <div className="mb-8 leading-relaxed text-justify text-[14px]">
                   {renderArray(worksheetData?.part5?.paragraphs, (p, i) => (
                     <div key={i} className="mb-4 break-inside-avoid">
                       <div className="font-medium text-gray-900 mb-1" contentEditable suppressContentEditableWarning>{p?.en || '英文段落'}</div>
-                      <div className="text-gray-700 text-[13px]" contentEditable suppressContentEditableWarning>{p?.zh || '中文翻譯'}</div>
+                      {extReadingTextLang === '中英文並陳' && (
+                        <div className="text-gray-700 text-[13px]" contentEditable suppressContentEditableWarning>{p?.zh || '中文翻譯'}</div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -859,10 +884,10 @@ ${grammarInstruction}
           ) : (
             <div className="h-full flex flex-col items-center justify-center text-gray-400 space-y-4 px-4 text-center">
               <BookOpen size={48} className="opacity-20 md:w-16 md:h-16" />
-              <p className="text-base md:text-lg text-gray-500 font-medium">專屬 V18 極限萃取版已就緒</p>
+              <p className="text-base md:text-lg text-gray-500 font-medium">專屬 V22 完美細節版已就緒</p>
               <ul className="text-sm space-y-2 text-gray-400">
                 <li>1. 貼上 API 金鑰</li>
-                <li>2. 設定單字、文法與延伸閱讀字數</li>
+                <li>2. 自由設定文法、題數、難易度</li>
                 <li>3. 點擊「一鍵生成」</li>
               </ul>
             </div>
