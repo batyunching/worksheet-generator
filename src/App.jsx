@@ -57,17 +57,17 @@ export default function App() {
   // 主文設定
   const [format, setFormat] = useState('對話 Dialogue');
   const [textLength, setTextLength] = useState('中: 12~16句'); 
-  const [vocabCount, setVocabCount] = useState(8);
-  const [phraseCount, setPhraseCount] = useState(2);
+  const [vocabCount, setVocabCount] = useState(8); // V24 改為可從 0 開始
+  const [phraseCount, setPhraseCount] = useState(2); // V24 改為可從 0 開始
   
   // 課後練習題數
-  const [tfCount, setTfCount] = useState(3);
-  const [fibCount, setFibCount] = useState(4);
-  const [mcCount, setMcCount] = useState(3);
+  const [tfCount, setTfCount] = useState(3); // V24 改為可從 0 開始
+  const [fibCount, setFibCount] = useState(4); // V24 改為可從 0 開始
+  const [mcCount, setMcCount] = useState(3); // V24 改為可從 0 開始
 
   // 延伸閱讀設定
   const [extReadingLength, setExtReadingLength] = useState('100~150字');
-  const [extReadingTextLang, setExtReadingTextLang] = useState('中英文並陳'); // V22 新增：延伸閱讀主文語言
+  const [extReadingTextLang, setExtReadingTextLang] = useState('中英文並陳');
   const [extReadingQCount, setExtReadingQCount] = useState(3);
   const [extReadingQLang, setExtReadingQLang] = useState('中文');
 
@@ -181,7 +181,7 @@ export default function App() {
 
   const renderArray = (data, renderFn) => {
     if (!data || !Array.isArray(data) || data.length === 0) {
-      return <div className="text-gray-400 italic text-xs py-1">（此區塊未生成）</div>;
+      return null; // V24: 改為直接隱藏不顯示
     }
     return data.map(renderFn);
   };
@@ -266,8 +266,9 @@ export default function App() {
 請根據使用者的設定產出一份中英文跨領域學習單。
 
 【重要規定】
-1. 所有陣列與屬性都必須填滿「真實且完整的英文與中文內容」，絕對不可以回傳空陣列 [] 或空字串！
-2. 若使用者要求「長篇」文章或對話，請充分發揮創意，提供豐富且具有深度的完整內容，不要敷衍。`;
+1. 所有陣列與屬性都必須填寫真實的英文與中文內容。
+2. 【特別注意】若使用者要求某個項目的數量為「0」，請將該對應的陣列回傳為「空陣列 []」。否則，請確實填滿內容，不可敷衍。
+3. 若使用者要求「長篇」文章或對話，請充分發揮創意，提供豐富且具有深度的完整內容。`;
 
     const grammarInstruction = selectedGrammars.length > 0 
       ? `- 核心文法：嚴格要求在此學習單的 Part 1 與 Part 2 主文 (main_text) 中，必須自然地融入以下文法句型：【${selectedGrammars.join('、')}】！` 
@@ -277,6 +278,7 @@ export default function App() {
       ? `Part 1 與 Part 2 內文長度：【每個 Part】皆須獨立並盡可能達到「${textLength}」。（1個角色說一句話算1句）。`
       : `Part 1 與 Part 2 內文長度：【每個 Part】皆須獨立並盡可能達到「${textLength}」。`;
 
+    // V24 強調 0 題的邏輯
     const userQueryBase = `請開始製作講義！
 條件如下：
 - 適用對象：${grade}
@@ -286,14 +288,14 @@ ${grammarInstruction}
 - 課文形式：${format}
 - ${lengthInstruction}
 
-【產出數量要求】(絕不可交白卷)
-- 單字數量：Part 1 與 Part 2 各需真實生成 ${vocabCount} 個單字，包含中英例句。
-- 片語數量：Part 1 與 Part 2 各需真實生成 ${phraseCount} 個片語，包含中英例句。
-- 測驗題數：是非題 ${tfCount} 題、填空題 ${fibCount} 題、選擇題 ${mcCount} 題。
+【產出數量要求】
+- 單字數量：Part 1 與 Part 2 各需生成 ${vocabCount} 個單字，包含中英例句。(若要求為 0，請回傳空陣列 [])
+- 片語數量：Part 1 與 Part 2 各需生成 ${phraseCount} 個片語，包含中英例句。(若要求為 0，請回傳空陣列 [])
+- 測驗題數：是非題 ${tfCount} 題、填空題 ${fibCount} 題、選擇題 ${mcCount} 題。(若某題型為 0 題，請將該題型陣列回傳為空陣列 [])
 
 【Part 5 延伸閱讀專屬要求】
 - 延伸閱讀字數：內容須豐富並達到【${extReadingLength}】左右。
-- 延伸閱讀主文：請照常產生英文與中文的對照段落 (前端會依照使用者的選擇來過濾顯示語言)。
+- 延伸閱讀主文：請照常產生英文與中文的對照段落。
 - 批判性思考題數：嚴格生成【${extReadingQCount}】題。
 - 批判性思考語言：題目必須使用【${extReadingQLang}】撰寫。
 
@@ -345,17 +347,31 @@ ${grammarInstruction}
       } catch (err) {
         console.warn(`第 ${attempts + 1} 次生成或解析失敗:`, err);
         attempts++;
+        
+        const isQuotaError = err.message.toLowerCase().includes('quota') || err.message.includes('429');
+
         if (attempts > maxRetries) {
-          setError(`生成失敗：${err.message}。長文生成需要極高的穩定度，請稍後再試一次！`);
+          if (isQuotaError) {
+            setError(`生成失敗：API 呼叫次數達免費版每分鐘上限。請去喝杯水，等待 1 分鐘後再點擊一次即可！`);
+          } else {
+            setError(`生成失敗：${err.message}。請稍後再試一次！`);
+          }
           setIsLoading(false);
           return;
+        }
+
+        if (isQuotaError) {
+          showToast(`API 呼叫頻率過高，系統自動休眠 6 秒後重試，請稍候...`);
+          await new Promise(resolve => setTimeout(resolve, 6000));
+        } else {
+          await new Promise(resolve => setTimeout(resolve, 2000));
         }
       }
     }
 
     if (finalParsedData) {
       setWorksheetData(finalParsedData);
-      showToast('🎉 V22 講義生成成功！點擊畫面右側文字可直接修改。');
+      showToast('🎉 V24 講義生成成功！點擊畫面右側文字可直接修改。');
     }
     setIsLoading(false);
   };
@@ -366,8 +382,32 @@ ${grammarInstruction}
     </div>
   );
 
+  // V24: 動態計算各題型是否顯示與題號
   const actualTfCount = Array.isArray(worksheetData?.part4?.true_false) ? worksheetData.part4.true_false.length : 0;
   const actualFibCount = Array.isArray(worksheetData?.part4?.fill_in_blanks?.questions) ? worksheetData.part4.fill_in_blanks.questions.length : 0;
+  const actualMcCount = Array.isArray(worksheetData?.part4?.multiple_choice) ? worksheetData.part4.multiple_choice.length : 0;
+
+  const showTf = actualTfCount > 0;
+  const showFib = actualFibCount > 0;
+  const showMc = actualMcCount > 0;
+  const hasExercises = showTf || showFib || showMc;
+
+  // 自動配置中文題號 (例如: 一、二、三)
+  let exIdx = 0;
+  const tfTitle = showTf ? `${['一', '二', '三'][exIdx++]}、是非題 (True or False)` : '';
+  const fibTitle = showFib ? `${['一', '二', '三'][exIdx++]}、填空題 (Fill in the Blanks)` : '';
+  const mcTitle = showMc ? `${['一', '二', '三'][exIdx++]}、選擇題 (Multiple Choice)` : '';
+
+  // 動態計算 Part 1 與 Part 2 是否有單字片語
+  const showVocab1 = Array.isArray(worksheetData?.part1?.vocabularies) && worksheetData.part1.vocabularies.length > 0;
+  const showPhrase1 = Array.isArray(worksheetData?.part1?.phrases) && worksheetData.part1.phrases.length > 0;
+  const hasVocabOrPhrase1 = showVocab1 || showPhrase1;
+
+  const showVocab2 = Array.isArray(worksheetData?.part2?.vocabularies) && worksheetData.part2.vocabularies.length > 0;
+  const showPhrase2 = Array.isArray(worksheetData?.part2?.phrases) && worksheetData.part2.phrases.length > 0;
+  const hasVocabOrPhrase2 = showVocab2 || showPhrase2;
+
+  const grammarLabels = selectedGrammars.map(g => g.split('：')[0]).join(', ');
 
   return (
     <div className="flex flex-col md:flex-row h-screen bg-gray-100 font-sans overflow-hidden print:bg-white relative">
@@ -403,9 +443,9 @@ ${grammarInstruction}
         <div className="p-4 border-b bg-blue-700 text-white flex flex-col justify-center">
           <h1 className="text-xl font-bold flex items-center gap-2">
             <BookOpen size={22} />
-            跨域講義生成器 <span className="text-xs bg-blue-900 border border-blue-500 px-2 py-0.5 rounded shadow-sm">V22</span>
+            跨域講義生成器 <span className="text-xs bg-blue-900 border border-blue-500 px-2 py-0.5 rounded shadow-sm">V24</span>
           </h1>
-          <p className="text-blue-100 text-sm mt-1">專業版 - 完整標頭與閱讀客製化</p>
+          <p className="text-blue-100 text-sm mt-1">專業版 - 彈性自訂題數系統</p>
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 md:p-5 space-y-5 custom-scrollbar">
@@ -512,7 +552,6 @@ ${grammarInstruction}
                 </select>
               </div>
               <div className="space-y-1">
-                {/* V22: 主文顯示語言切換 */}
                 <label className="text-xs font-bold text-gray-600">主文語言</label>
                 <select value={extReadingTextLang} onChange={e => setExtReadingTextLang(e.target.value)} className="w-full p-1.5 border rounded-md text-sm bg-white outline-none">
                   <option>英文</option>
@@ -537,30 +576,31 @@ ${grammarInstruction}
           </div>
 
           <div className="pt-2">
-            <div className="text-blue-700 font-bold border-b border-blue-200 pb-1 mb-3 text-sm">講義內容與習題數</div>
+            <div className="text-blue-700 font-bold border-b border-blue-200 pb-1 mb-3 text-sm">講義內容與習題數 (可設定為 0)</div>
             <div className="grid grid-cols-2 gap-3 mb-3">
               <div className="space-y-1">
                 <label className="text-[11px] md:text-xs font-bold text-gray-600">單字數/篇</label>
-                <input type="number" min="2" max="15" value={vocabCount} onChange={e => setVocabCount(e.target.value)} className="w-full p-1.5 border rounded-md text-sm text-center" />
+                {/* V24 改為 min="0" */}
+                <input type="number" min="0" max="15" value={vocabCount} onChange={e => setVocabCount(e.target.value)} className="w-full p-1.5 border rounded-md text-sm text-center" />
               </div>
               <div className="space-y-1">
                 <label className="text-[11px] md:text-xs font-bold text-gray-600">片語數/篇</label>
-                <input type="number" min="1" max="10" value={phraseCount} onChange={e => setPhraseCount(e.target.value)} className="w-full p-1.5 border rounded-md text-sm text-center" />
+                <input type="number" min="0" max="10" value={phraseCount} onChange={e => setPhraseCount(e.target.value)} className="w-full p-1.5 border rounded-md text-sm text-center" />
               </div>
             </div>
             
             <div className="grid grid-cols-3 gap-2">
               <div className="space-y-1">
                 <label className="text-[11px] md:text-xs font-bold text-gray-600">是非題</label>
-                <input type="number" min="1" max="10" value={tfCount} onChange={e => setTfCount(e.target.value)} className="w-full p-1.5 border rounded-md text-sm text-center" />
+                <input type="number" min="0" max="10" value={tfCount} onChange={e => setTfCount(e.target.value)} className="w-full p-1.5 border rounded-md text-sm text-center" />
               </div>
               <div className="space-y-1">
                 <label className="text-[11px] md:text-xs font-bold text-gray-600">填空題</label>
-                <input type="number" min="1" max="10" value={fibCount} onChange={e => setFibCount(e.target.value)} className="w-full p-1.5 border rounded-md text-sm text-center" />
+                <input type="number" min="0" max="10" value={fibCount} onChange={e => setFibCount(e.target.value)} className="w-full p-1.5 border rounded-md text-sm text-center" />
               </div>
               <div className="space-y-1">
                 <label className="text-[11px] md:text-xs font-bold text-gray-600">選擇題</label>
-                <input type="number" min="1" max="10" value={mcCount} onChange={e => setMcCount(e.target.value)} className="w-full p-1.5 border rounded-md text-sm text-center" />
+                <input type="number" min="0" max="10" value={mcCount} onChange={e => setMcCount(e.target.value)} className="w-full p-1.5 border rounded-md text-sm text-center" />
               </div>
             </div>
           </div>
@@ -625,11 +665,10 @@ ${grammarInstruction}
                   <div className="leading-tight">
                     <div contentEditable suppressContentEditableWarning>融入主題：{topic}</div>
                     <div className="text-gray-500" contentEditable suppressContentEditableWarning>
-                      適用對象：{grade} ({cefrLevel})
+                      適用對象：{grade} ({cefrLevel}) 
                     </div>
-                    {/* V22: 完整文法標示移至此處 */}
                     {selectedGrammars.length > 0 && (
-                      <div className="text-gray-500 mt-1" contentEditable suppressContentEditableWarning>
+                      <div className="text-gray-500" contentEditable suppressContentEditableWarning>
                         文法：{selectedGrammars.join('、')}
                       </div>
                     )}
@@ -640,35 +679,46 @@ ${grammarInstruction}
                 </div>
 
                 <div className="flex flex-col sm:flex-row print-flex-row gap-8">
-                  <div className="w-full sm:w-[45%]">
-                    <BoxTitle>Part 1 重點單字</BoxTitle>
-                    <div className="mb-4">
-                      {renderArray(worksheetData?.part1?.vocabularies, (v, i) => (
-                        <div key={i} className="mb-2 break-inside-avoid text-[13px]">
-                          <div className="font-bold">
-                            {i+1}. <span contentEditable suppressContentEditableWarning>{v?.word || 'Word'}</span> <span className="font-normal text-gray-700 ml-1" contentEditable suppressContentEditableWarning>{v?.zh || '中文'}</span>
+                  {/* V24: 動態隱藏單字片語區塊並拉寬主文 */}
+                  {hasVocabOrPhrase1 && (
+                    <div className="w-full sm:w-[45%]">
+                      {showVocab1 && (
+                        <>
+                          <BoxTitle>Part 1 重點單字</BoxTitle>
+                          <div className="mb-4">
+                            {renderArray(worksheetData?.part1?.vocabularies, (v, i) => (
+                              <div key={i} className="mb-2 break-inside-avoid text-[13px]">
+                                <div className="font-bold">
+                                  {i+1}. <span contentEditable suppressContentEditableWarning>{v?.word || 'Word'}</span> <span className="font-normal text-gray-700 ml-1" contentEditable suppressContentEditableWarning>{v?.zh || '中文'}</span>
+                                </div>
+                                <div className="pl-4 text-blue-900" contentEditable suppressContentEditableWarning>{v?.example_en || 'Example.'}</div>
+                                <div className="pl-4 text-gray-600 text-xs" contentEditable suppressContentEditableWarning>{v?.example_zh || '翻譯。'}</div>
+                              </div>
+                            ))}
                           </div>
-                          <div className="pl-4 text-blue-900" contentEditable suppressContentEditableWarning>{v?.example_en || 'Example.'}</div>
-                          <div className="pl-4 text-gray-600 text-xs" contentEditable suppressContentEditableWarning>{v?.example_zh || '翻譯。'}</div>
-                        </div>
-                      ))}
-                    </div>
+                        </>
+                      )}
 
-                    <BoxTitle>Part 1 學習片語</BoxTitle>
-                    <div className="mb-4">
-                      {renderArray(worksheetData?.part1?.phrases, (p, i) => (
-                        <div key={i} className="mb-2 break-inside-avoid text-[13px]">
-                          <div className="font-bold text-red-700">
-                            {i+1}. <span contentEditable suppressContentEditableWarning>{p?.phrase || 'Phrase'}</span> <span className="font-normal text-gray-700 ml-1" contentEditable suppressContentEditableWarning>{p?.zh || '中文'}</span>
+                      {showPhrase1 && (
+                        <>
+                          <BoxTitle>Part 1 學習片語</BoxTitle>
+                          <div className="mb-4">
+                            {renderArray(worksheetData?.part1?.phrases, (p, i) => (
+                              <div key={i} className="mb-2 break-inside-avoid text-[13px]">
+                                <div className="font-bold text-red-700">
+                                  {i+1}. <span contentEditable suppressContentEditableWarning>{p?.phrase || 'Phrase'}</span> <span className="font-normal text-gray-700 ml-1" contentEditable suppressContentEditableWarning>{p?.zh || '中文'}</span>
+                                </div>
+                                <div className="pl-4 text-blue-900" contentEditable suppressContentEditableWarning>{p?.example_en || 'Example.'}</div>
+                                <div className="pl-4 text-gray-600 text-xs" contentEditable suppressContentEditableWarning>{p?.example_zh || '翻譯。'}</div>
+                              </div>
+                            ))}
                           </div>
-                          <div className="pl-4 text-blue-900" contentEditable suppressContentEditableWarning>{p?.example_en || 'Example.'}</div>
-                          <div className="pl-4 text-gray-600 text-xs" contentEditable suppressContentEditableWarning>{p?.example_zh || '翻譯。'}</div>
-                        </div>
-                      ))}
+                        </>
+                      )}
                     </div>
-                  </div>
+                  )}
 
-                  <div className="w-full sm:w-[55%]">
+                  <div className={`w-full ${hasVocabOrPhrase1 ? 'sm:w-[55%]' : ''}`}>
                     <div className="flex items-start gap-3 mb-4">
                       <div className="w-16 h-16 border border-gray-400 bg-gray-50 flex items-center justify-center text-[10px] text-gray-400 flex-shrink-0" contentEditable suppressContentEditableWarning>
                         [QR Code]
@@ -698,9 +748,8 @@ ${grammarInstruction}
                     <div className="text-gray-500" contentEditable suppressContentEditableWarning>
                       適用對象：{grade} ({cefrLevel})
                     </div>
-                    {/* V22: 完整文法標示移至此處 */}
                     {selectedGrammars.length > 0 && (
-                      <div className="text-gray-500 mt-1" contentEditable suppressContentEditableWarning>
+                      <div className="text-gray-500" contentEditable suppressContentEditableWarning>
                         文法：{selectedGrammars.join('、')}
                       </div>
                     )}
@@ -708,35 +757,46 @@ ${grammarInstruction}
                 </div>
 
                 <div className="flex flex-col sm:flex-row print-flex-row gap-8">
-                  <div className="w-full sm:w-[45%]">
-                    <BoxTitle>Part 2 重點單字</BoxTitle>
-                    <div className="mb-4">
-                      {renderArray(worksheetData?.part2?.vocabularies, (v, i) => (
-                        <div key={i} className="mb-2 break-inside-avoid text-[13px]">
-                          <div className="font-bold">
-                            {i+1}. <span contentEditable suppressContentEditableWarning>{v?.word || 'Word'}</span> <span className="font-normal text-gray-700 ml-1" contentEditable suppressContentEditableWarning>{v?.zh || '中文'}</span>
+                  {/* V24: 動態隱藏單字片語區塊並拉寬主文 */}
+                  {hasVocabOrPhrase2 && (
+                    <div className="w-full sm:w-[45%]">
+                      {showVocab2 && (
+                        <>
+                          <BoxTitle>Part 2 重點單字</BoxTitle>
+                          <div className="mb-4">
+                            {renderArray(worksheetData?.part2?.vocabularies, (v, i) => (
+                              <div key={i} className="mb-2 break-inside-avoid text-[13px]">
+                                <div className="font-bold">
+                                  {i+1}. <span contentEditable suppressContentEditableWarning>{v?.word || 'Word'}</span> <span className="font-normal text-gray-700 ml-1" contentEditable suppressContentEditableWarning>{v?.zh || '中文'}</span>
+                                </div>
+                                <div className="pl-4 text-blue-900" contentEditable suppressContentEditableWarning>{v?.example_en || 'Example.'}</div>
+                                <div className="pl-4 text-gray-600 text-xs" contentEditable suppressContentEditableWarning>{v?.example_zh || '翻譯。'}</div>
+                              </div>
+                            ))}
                           </div>
-                          <div className="pl-4 text-blue-900" contentEditable suppressContentEditableWarning>{v?.example_en || 'Example.'}</div>
-                          <div className="pl-4 text-gray-600 text-xs" contentEditable suppressContentEditableWarning>{v?.example_zh || '翻譯。'}</div>
-                        </div>
-                      ))}
-                    </div>
+                        </>
+                      )}
 
-                    <BoxTitle>Part 2 學習片語</BoxTitle>
-                    <div className="mb-4">
-                      {renderArray(worksheetData?.part2?.phrases, (p, i) => (
-                        <div key={i} className="mb-2 break-inside-avoid text-[13px]">
-                          <div className="font-bold text-red-700">
-                            {i+1}. <span contentEditable suppressContentEditableWarning>{p?.phrase || 'Phrase'}</span> <span className="font-normal text-gray-700 ml-1" contentEditable suppressContentEditableWarning>{p?.zh || '中文'}</span>
+                      {showPhrase2 && (
+                        <>
+                          <BoxTitle>Part 2 學習片語</BoxTitle>
+                          <div className="mb-4">
+                            {renderArray(worksheetData?.part2?.phrases, (p, i) => (
+                              <div key={i} className="mb-2 break-inside-avoid text-[13px]">
+                                <div className="font-bold text-red-700">
+                                  {i+1}. <span contentEditable suppressContentEditableWarning>{p?.phrase || 'Phrase'}</span> <span className="font-normal text-gray-700 ml-1" contentEditable suppressContentEditableWarning>{p?.zh || '中文'}</span>
+                                </div>
+                                <div className="pl-4 text-blue-900" contentEditable suppressContentEditableWarning>{p?.example_en || 'Example.'}</div>
+                                <div className="pl-4 text-gray-600 text-xs" contentEditable suppressContentEditableWarning>{p?.example_zh || '翻譯。'}</div>
+                              </div>
+                            ))}
                           </div>
-                          <div className="pl-4 text-blue-900" contentEditable suppressContentEditableWarning>{p?.example_en || 'Example.'}</div>
-                          <div className="pl-4 text-gray-600 text-xs" contentEditable suppressContentEditableWarning>{p?.example_zh || '翻譯。'}</div>
-                        </div>
-                      ))}
+                        </>
+                      )}
                     </div>
-                  </div>
+                  )}
 
-                  <div className="w-full sm:w-[55%]">
+                  <div className={`w-full ${hasVocabOrPhrase2 ? 'sm:w-[55%]' : ''}`}>
                     <div className="flex items-start gap-3 mb-4">
                       <div className="w-16 h-16 border border-gray-400 bg-gray-50 flex items-center justify-center text-[10px] text-gray-400 flex-shrink-0" contentEditable suppressContentEditableWarning>
                         [QR Code]
@@ -761,7 +821,8 @@ ${grammarInstruction}
               {/* PAGE 3: Part 3 (Left) & Part 4 (Right) */}
               <div className="pt-4 flex flex-col sm:flex-row print-flex-row gap-8">
                 
-                <div className="w-full sm:w-[45%]">
+                {/* V24: 如果沒有任何練習題，中文翻譯將自動變為全寬滿版 */}
+                <div className={`w-full ${hasExercises ? 'sm:w-[45%]' : ''}`}>
                   <BoxTitle>Part 3 中文翻譯</BoxTitle>
                   
                   <div className="mt-4 mb-6">
@@ -783,55 +844,62 @@ ${grammarInstruction}
                   </div>
                 </div>
 
-                <div className="w-full sm:w-[55%]">
-                  <BoxTitle>Part 4 Exercise 練習題</BoxTitle>
+                {hasExercises && (
+                  <div className="w-full sm:w-[55%]">
+                    <BoxTitle>Part 4 Exercise 練習題</BoxTitle>
 
-                  <div className="mt-4 mb-6 break-inside-avoid">
-                    <h3 className="font-bold text-gray-900 mb-3" contentEditable suppressContentEditableWarning>一、是非題 (True or False)</h3>
-                    {renderArray(worksheetData?.part4?.true_false, (q, i) => (
-                      <div key={i} className="mb-2 flex gap-2">
-                        <span className="font-mono mt-0.5">(   )</span>
-                        <span className="flex-1" contentEditable suppressContentEditableWarning>{i+1}. {q?.question || '題目區塊'}</span>
+                    {showTf && (
+                      <div className="mt-4 mb-6 break-inside-avoid">
+                        <h3 className="font-bold text-gray-900 mb-3" contentEditable suppressContentEditableWarning>{tfTitle}</h3>
+                        {renderArray(worksheetData?.part4?.true_false, (q, i) => (
+                          <div key={i} className="mb-2 flex gap-2">
+                            <span className="font-mono mt-0.5">(   )</span>
+                            <span className="flex-1" contentEditable suppressContentEditableWarning>{i+1}. {q?.question || '題目區塊'}</span>
+                          </div>
+                        ))}
                       </div>
-                    ))}
-                  </div>
+                    )}
 
-                  <div className="mb-6 break-inside-avoid border-t border-gray-300 pt-4">
-                    <h3 className="font-bold text-gray-900 mb-2" contentEditable suppressContentEditableWarning>二、填空題 (Fill in the Blanks)</h3>
-                    <div className="border border-black p-1.5 text-center mb-4 font-mono text-[13px]" contentEditable suppressContentEditableWarning>
-                      單字：{Array.isArray(worksheetData?.part4?.fill_in_blanks?.word_bank) && worksheetData.part4.fill_in_blanks.word_bank.length > 0
-                        ? worksheetData.part4.fill_in_blanks.word_bank.join(" / ") 
-                        : '單字庫'}
-                    </div>
-                    {renderArray(worksheetData?.part4?.fill_in_blanks?.questions, (q, i) => (
-                      <div key={i} className="mb-3 flex gap-2">
-                        <span>{i + 1 + actualTfCount}.</span>
-                        <span contentEditable suppressContentEditableWarning className="flex-1">{q?.question || '題目 ___'}</span>
-                      </div>
-                    ))}
-                  </div>
-
-                  <div className="mb-4 break-inside-avoid border-t border-gray-300 pt-4">
-                    <h3 className="font-bold text-gray-900 mb-3" contentEditable suppressContentEditableWarning>三、選擇題 (Multiple Choice)</h3>
-                    {renderArray(worksheetData?.part4?.multiple_choice, (q, i) => (
-                      <div key={i} className="mb-5">
-                        <div className="mb-2 flex gap-2">
-                          <span>{i + 1 + actualTfCount + actualFibCount}.</span>
-                          <span contentEditable suppressContentEditableWarning>{q?.question || '題目區塊'}</span>
+                    {showFib && (
+                      <div className={`${showTf ? 'border-t border-gray-300 pt-4' : 'mt-4'} mb-6 break-inside-avoid`}>
+                        <h3 className="font-bold text-gray-900 mb-2" contentEditable suppressContentEditableWarning>{fibTitle}</h3>
+                        <div className="border border-black p-1.5 text-center mb-4 font-mono text-[13px]" contentEditable suppressContentEditableWarning>
+                          單字：{Array.isArray(worksheetData?.part4?.fill_in_blanks?.word_bank) && worksheetData.part4.fill_in_blanks.word_bank.length > 0
+                            ? worksheetData.part4.fill_in_blanks.word_bank.join(" / ") 
+                            : '單字庫'}
                         </div>
-                        <div className="pl-5 grid grid-cols-1 gap-1">
-                          {renderArray(Array.isArray(q?.options) && q.options.length > 0 ? q.options : ['選項A','選項B','選項C','選項D'], (opt, j) => {
-                            const cleanOpt = typeof opt === 'string' ? opt.replace(/^[\(（]?[A-D][\)）\.、]\s*/i, '') : opt;
-                            return (
-                              <div key={j} contentEditable suppressContentEditableWarning>({['A','B','C','D'][j]}) {cleanOpt}</div>
-                            );
-                          })}
-                        </div>
+                        {renderArray(worksheetData?.part4?.fill_in_blanks?.questions, (q, i) => (
+                          <div key={i} className="mb-3 flex gap-2">
+                            <span>{i + 1 + actualTfCount}.</span>
+                            <span contentEditable suppressContentEditableWarning className="flex-1">{q?.question || '題目 ___'}</span>
+                          </div>
+                        ))}
                       </div>
-                    ))}
-                  </div>
+                    )}
 
-                </div>
+                    {showMc && (
+                      <div className={`${(showTf || showFib) ? 'border-t border-gray-300 pt-4' : 'mt-4'} mb-4 break-inside-avoid`}>
+                        <h3 className="font-bold text-gray-900 mb-3" contentEditable suppressContentEditableWarning>{mcTitle}</h3>
+                        {renderArray(worksheetData?.part4?.multiple_choice, (q, i) => (
+                          <div key={i} className="mb-5">
+                            <div className="mb-2 flex gap-2">
+                              <span>{i + 1 + actualTfCount + actualFibCount}.</span>
+                              <span contentEditable suppressContentEditableWarning>{q?.question || '題目區塊'}</span>
+                            </div>
+                            <div className="pl-5 grid grid-cols-1 gap-1">
+                              {renderArray(Array.isArray(q?.options) && q.options.length > 0 ? q.options : ['選項A','選項B','選項C','選項D'], (opt, j) => {
+                                const cleanOpt = typeof opt === 'string' ? opt.replace(/^[\(（]?[A-D][\)）\.、]\s*/i, '') : opt;
+                                return (
+                                  <div key={j} contentEditable suppressContentEditableWarning>({['A','B','C','D'][j]}) {cleanOpt}</div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div className="page-break"></div>
@@ -843,7 +911,6 @@ ${grammarInstruction}
                    {worksheetData?.part5?.title_en || 'Title'} {worksheetData?.part5?.title_zh || '延伸閱讀標題'}
                 </div>
                 
-                {/* V22: 支援自動過濾語言 */}
                 <div className="mb-8 leading-relaxed text-justify text-[14px]">
                   {renderArray(worksheetData?.part5?.paragraphs, (p, i) => (
                     <div key={i} className="mb-4 break-inside-avoid">
@@ -872,22 +939,24 @@ ${grammarInstruction}
                 </div>
               </div>
 
-              {/* 解答區 */}
-              <div className="mt-12 pt-4 border-t border-dashed border-gray-400 text-xs text-gray-500 break-inside-avoid text-center">
-                <div className="font-bold mb-2">P.3 答案區 (Teacher's Key)</div>
-                <span className="mr-4">是非題：{Array.isArray(worksheetData?.part4?.true_false) ? worksheetData.part4.true_false.map((q, i) => `${i + 1}.${q?.answer || '?'}`).join('  ') : ''}</span>
-                <span className="mr-4">填空題：{Array.isArray(worksheetData?.part4?.fill_in_blanks?.questions) ? worksheetData.part4.fill_in_blanks.questions.map((q, i) => `${i + 1 + actualTfCount}.${q?.answer || '?'}`).join('  ') : ''}</span>
-                <span>選擇題：{Array.isArray(worksheetData?.part4?.multiple_choice) ? worksheetData.part4.multiple_choice.map((q, i) => `${i + 1 + actualTfCount + actualFibCount}.(${q?.answer || '?'})`).join('  ') : ''}</span>
-              </div>
+              {/* 解答區 (動態呈現) */}
+              {(showTf || showFib || showMc) && (
+                <div className="mt-12 pt-4 border-t border-dashed border-gray-400 text-xs text-gray-500 break-inside-avoid text-center">
+                  <div className="font-bold mb-2">P.3 答案區 (Teacher's Key)</div>
+                  {showTf && <span className="mr-4">是非題：{worksheetData.part4.true_false.map((q, i) => `${i + 1}.${q?.answer || '?'}`).join('  ')}</span>}
+                  {showFib && <span className="mr-4">填空題：{worksheetData.part4.fill_in_blanks.questions.map((q, i) => `${i + 1 + actualTfCount}.${q?.answer || '?'}`).join('  ')}</span>}
+                  {showMc && <span>選擇題：{worksheetData.part4.multiple_choice.map((q, i) => `${i + 1 + actualTfCount + actualFibCount}.(${q?.answer || '?'})`).join('  ')}</span>}
+                </div>
+              )}
 
             </div>
           ) : (
             <div className="h-full flex flex-col items-center justify-center text-gray-400 space-y-4 px-4 text-center">
               <BookOpen size={48} className="opacity-20 md:w-16 md:h-16" />
-              <p className="text-base md:text-lg text-gray-500 font-medium">專屬 V22 完美細節版已就緒</p>
+              <p className="text-base md:text-lg text-gray-500 font-medium">專屬 V24 彈性自訂題數版已就緒</p>
               <ul className="text-sm space-y-2 text-gray-400">
                 <li>1. 貼上 API 金鑰</li>
-                <li>2. 自由設定文法、題數、難易度</li>
+                <li>2. 自由設定單字題數 (可設為 0)</li>
                 <li>3. 點擊「一鍵生成」</li>
               </ul>
             </div>
