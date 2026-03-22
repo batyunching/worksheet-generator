@@ -57,13 +57,13 @@ export default function App() {
   // 主文設定
   const [format, setFormat] = useState('對話 Dialogue');
   const [textLength, setTextLength] = useState('中: 12~16句'); 
-  const [vocabCount, setVocabCount] = useState(8); // V24 改為可從 0 開始
-  const [phraseCount, setPhraseCount] = useState(2); // V24 改為可從 0 開始
+  const [vocabCount, setVocabCount] = useState(8);
+  const [phraseCount, setPhraseCount] = useState(2);
   
   // 課後練習題數
-  const [tfCount, setTfCount] = useState(3); // V24 改為可從 0 開始
-  const [fibCount, setFibCount] = useState(4); // V24 改為可從 0 開始
-  const [mcCount, setMcCount] = useState(3); // V24 改為可從 0 開始
+  const [tfCount, setTfCount] = useState(3);
+  const [fibCount, setFibCount] = useState(4);
+  const [mcCount, setMcCount] = useState(3);
 
   // 延伸閱讀設定
   const [extReadingLength, setExtReadingLength] = useState('100~150字');
@@ -181,22 +181,25 @@ export default function App() {
 
   const renderArray = (data, renderFn) => {
     if (!data || !Array.isArray(data) || data.length === 0) {
-      return null; // V24: 改為直接隱藏不顯示
+      return null;
     }
     return data.map(renderFn);
   };
 
+  // V25: 針對多段落字串陣列的文字渲染進行優化
   const renderText = (textOrArray) => {
-    if (!textOrArray || textOrArray === '') {
+    if (!textOrArray || textOrArray === '' || (Array.isArray(textOrArray) && textOrArray.length === 0)) {
       return <div className="text-gray-400 italic py-2">（此區塊未生成）</div>;
     }
     let lines = Array.isArray(textOrArray) ? textOrArray : textOrArray.split('\n');
     return lines.map((line, i) => {
       if (!line.trim()) return <div key={i} className="h-2"></div>;
-      return <div key={i} className="mb-2 leading-relaxed" contentEditable suppressContentEditableWarning>{line}</div>;
+      // 加上 mb-3 提供段落或對話間更佳的留白閱讀體驗
+      return <div key={i} className="mb-3 leading-relaxed" contentEditable suppressContentEditableWarning>{line}</div>;
     });
   };
 
+  // V25 重大更新：將 main_text 與 translation 更改為 ARRAY (陣列) 格式，強迫 AI 分行
   const responseSchema = {
     type: "OBJECT",
     required: ["title", "part1", "part2", "part3", "part4", "part5"],
@@ -210,7 +213,7 @@ export default function App() {
           subtitle_zh: { type: "STRING" },
           vocabularies: { type: "ARRAY", items: { type: "OBJECT", required: ["word", "zh", "example_en", "example_zh"], properties: { word: { type: "STRING" }, zh: { type: "STRING" }, example_en: { type: "STRING" }, example_zh: { type: "STRING" } } } },
           phrases: { type: "ARRAY", items: { type: "OBJECT", required: ["phrase", "zh", "example_en", "example_zh"], properties: { phrase: { type: "STRING" }, zh: { type: "STRING" }, example_en: { type: "STRING" }, example_zh: { type: "STRING" } } } },
-          main_text: { type: "STRING" }
+          main_text: { type: "ARRAY", items: { type: "STRING" } } // V25: 強制為陣列
         }
       },
       part2: {
@@ -221,15 +224,15 @@ export default function App() {
           subtitle_zh: { type: "STRING" },
           vocabularies: { type: "ARRAY", items: { type: "OBJECT", required: ["word", "zh", "example_en", "example_zh"], properties: { word: { type: "STRING" }, zh: { type: "STRING" }, example_en: { type: "STRING" }, example_zh: { type: "STRING" } } } },
           phrases: { type: "ARRAY", items: { type: "OBJECT", required: ["phrase", "zh", "example_en", "example_zh"], properties: { phrase: { type: "STRING" }, zh: { type: "STRING" }, example_en: { type: "STRING" }, example_zh: { type: "STRING" } } } },
-          main_text: { type: "STRING" }
+          main_text: { type: "ARRAY", items: { type: "STRING" } } // V25: 強制為陣列
         }
       },
       part3: {
         type: "OBJECT",
         required: ["translation_part1", "translation_part2"],
         properties: {
-          translation_part1: { type: "STRING" },
-          translation_part2: { type: "STRING" }
+          translation_part1: { type: "ARRAY", items: { type: "STRING" } }, // V25: 強制為陣列
+          translation_part2: { type: "ARRAY", items: { type: "STRING" } }  // V25: 強制為陣列
         }
       },
       part4: {
@@ -268,17 +271,43 @@ export default function App() {
 【重要規定】
 1. 所有陣列與屬性都必須填寫真實的英文與中文內容。
 2. 【特別注意】若使用者要求某個項目的數量為「0」，請將該對應的陣列回傳為「空陣列 []」。否則，請確實填滿內容，不可敷衍。
-3. 若使用者要求「長篇」文章或對話，請充分發揮創意，提供豐富且具有深度的完整內容。`;
+3. 若使用者要求「長篇」文章或對話，請充分發揮創意，提供豐富且具有深度的完整內容。
+
+【JSON 結構與排版極度重要規定】
+{
+  "title": "學習單的創意標題",
+  "part1": {
+    "subtitle_en": "Part 1 英文副標",
+    "subtitle_zh": "Part 1 中文副標",
+    "vocabularies": [ { "word": "單字1", "zh": "中文1", "example_en": "英文例句", "example_zh": "例句翻譯" } ],
+    "phrases": [ { "phrase": "片語1", "zh": "中文1", "example_en": "英文例句", "example_zh": "例句翻譯" } ],
+    "main_text": [
+      "第一句課文或第一人的對話 (例如: Amy: Hello!)",
+      "第二句課文或第二人的對話 (例如: Tom: Hi, Amy!)"
+    ]
+  },
+  "part2": { ...相同結構... },
+  "part3": {
+    "translation_part1": [
+      "第一句中文翻譯 (例如: 艾咪：你好！)",
+      "第二句中文翻譯 (例如: 湯姆：嗨，艾咪！)"
+    ],
+    "translation_part2": [ ...相同結構... ]
+  },
+  "part4": { ...相同結構... },
+  "part5": { ...相同結構... }
+}
+- 為了確保前端排版清晰，主文 (main_text) 與中文翻譯 (translation) 已設為【字串陣列 (Array of Strings)】。
+- 若是「對話」形式，【換人講話就必須換下一個陣列元素】，絕對不可以把所有人的對話擠在同一個字串裡面！中文翻譯也必須完全對應。`;
 
     const grammarInstruction = selectedGrammars.length > 0 
       ? `- 核心文法：嚴格要求在此學習單的 Part 1 與 Part 2 主文 (main_text) 中，必須自然地融入以下文法句型：【${selectedGrammars.join('、')}】！` 
       : `- 核心文法：無特定限制，請依循該年級的一般文法難度撰寫。`;
 
     const lengthInstruction = isDialogue
-      ? `Part 1 與 Part 2 內文長度：【每個 Part】皆須獨立並盡可能達到「${textLength}」。（1個角色說一句話算1句）。`
-      : `Part 1 與 Part 2 內文長度：【每個 Part】皆須獨立並盡可能達到「${textLength}」。`;
+      ? `Part 1 與 Part 2 內文長度：【每個 Part】皆須獨立並盡可能達到「${textLength}」。（1個角色說一句話算1個陣列元素）。`
+      : `Part 1 與 Part 2 內文長度：【每個 Part】皆須獨立並盡可能達到「${textLength}」。（請將長文拆分成數個段落放入陣列中）。`;
 
-    // V24 強調 0 題的邏輯
     const userQueryBase = `請開始製作講義！
 條件如下：
 - 適用對象：${grade}
@@ -371,7 +400,7 @@ ${grammarInstruction}
 
     if (finalParsedData) {
       setWorksheetData(finalParsedData);
-      showToast('🎉 V24 講義生成成功！點擊畫面右側文字可直接修改。');
+      showToast('🎉 V25 講義生成成功！對話排版已獨立分行！');
     }
     setIsLoading(false);
   };
@@ -382,7 +411,6 @@ ${grammarInstruction}
     </div>
   );
 
-  // V24: 動態計算各題型是否顯示與題號
   const actualTfCount = Array.isArray(worksheetData?.part4?.true_false) ? worksheetData.part4.true_false.length : 0;
   const actualFibCount = Array.isArray(worksheetData?.part4?.fill_in_blanks?.questions) ? worksheetData.part4.fill_in_blanks.questions.length : 0;
   const actualMcCount = Array.isArray(worksheetData?.part4?.multiple_choice) ? worksheetData.part4.multiple_choice.length : 0;
@@ -392,13 +420,11 @@ ${grammarInstruction}
   const showMc = actualMcCount > 0;
   const hasExercises = showTf || showFib || showMc;
 
-  // 自動配置中文題號 (例如: 一、二、三)
   let exIdx = 0;
   const tfTitle = showTf ? `${['一', '二', '三'][exIdx++]}、是非題 (True or False)` : '';
   const fibTitle = showFib ? `${['一', '二', '三'][exIdx++]}、填空題 (Fill in the Blanks)` : '';
   const mcTitle = showMc ? `${['一', '二', '三'][exIdx++]}、選擇題 (Multiple Choice)` : '';
 
-  // 動態計算 Part 1 與 Part 2 是否有單字片語
   const showVocab1 = Array.isArray(worksheetData?.part1?.vocabularies) && worksheetData.part1.vocabularies.length > 0;
   const showPhrase1 = Array.isArray(worksheetData?.part1?.phrases) && worksheetData.part1.phrases.length > 0;
   const hasVocabOrPhrase1 = showVocab1 || showPhrase1;
@@ -443,9 +469,9 @@ ${grammarInstruction}
         <div className="p-4 border-b bg-blue-700 text-white flex flex-col justify-center">
           <h1 className="text-xl font-bold flex items-center gap-2">
             <BookOpen size={22} />
-            跨域講義生成器 <span className="text-xs bg-blue-900 border border-blue-500 px-2 py-0.5 rounded shadow-sm">V24</span>
+            跨域講義生成器 <span className="text-xs bg-blue-900 border border-blue-500 px-2 py-0.5 rounded shadow-sm">V25</span>
           </h1>
-          <p className="text-blue-100 text-sm mt-1">專業版 - 彈性自訂題數系統</p>
+          <p className="text-blue-100 text-sm mt-1">專業版 - 獨立對話排版系統</p>
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 md:p-5 space-y-5 custom-scrollbar">
@@ -580,7 +606,6 @@ ${grammarInstruction}
             <div className="grid grid-cols-2 gap-3 mb-3">
               <div className="space-y-1">
                 <label className="text-[11px] md:text-xs font-bold text-gray-600">單字數/篇</label>
-                {/* V24 改為 min="0" */}
                 <input type="number" min="0" max="15" value={vocabCount} onChange={e => setVocabCount(e.target.value)} className="w-full p-1.5 border rounded-md text-sm text-center" />
               </div>
               <div className="space-y-1">
@@ -668,7 +693,7 @@ ${grammarInstruction}
                       適用對象：{grade} ({cefrLevel}) 
                     </div>
                     {selectedGrammars.length > 0 && (
-                      <div className="text-gray-500" contentEditable suppressContentEditableWarning>
+                      <div className="text-gray-500 mt-0.5" contentEditable suppressContentEditableWarning>
                         文法：{selectedGrammars.join('、')}
                       </div>
                     )}
@@ -679,7 +704,6 @@ ${grammarInstruction}
                 </div>
 
                 <div className="flex flex-col sm:flex-row print-flex-row gap-8">
-                  {/* V24: 動態隱藏單字片語區塊並拉寬主文 */}
                   {hasVocabOrPhrase1 && (
                     <div className="w-full sm:w-[45%]">
                       {showVocab1 && (
@@ -749,7 +773,7 @@ ${grammarInstruction}
                       適用對象：{grade} ({cefrLevel})
                     </div>
                     {selectedGrammars.length > 0 && (
-                      <div className="text-gray-500" contentEditable suppressContentEditableWarning>
+                      <div className="text-gray-500 mt-0.5" contentEditable suppressContentEditableWarning>
                         文法：{selectedGrammars.join('、')}
                       </div>
                     )}
@@ -757,7 +781,6 @@ ${grammarInstruction}
                 </div>
 
                 <div className="flex flex-col sm:flex-row print-flex-row gap-8">
-                  {/* V24: 動態隱藏單字片語區塊並拉寬主文 */}
                   {hasVocabOrPhrase2 && (
                     <div className="w-full sm:w-[45%]">
                       {showVocab2 && (
@@ -821,7 +844,6 @@ ${grammarInstruction}
               {/* PAGE 3: Part 3 (Left) & Part 4 (Right) */}
               <div className="pt-4 flex flex-col sm:flex-row print-flex-row gap-8">
                 
-                {/* V24: 如果沒有任何練習題，中文翻譯將自動變為全寬滿版 */}
                 <div className={`w-full ${hasExercises ? 'sm:w-[45%]' : ''}`}>
                   <BoxTitle>Part 3 中文翻譯</BoxTitle>
                   
@@ -953,7 +975,7 @@ ${grammarInstruction}
           ) : (
             <div className="h-full flex flex-col items-center justify-center text-gray-400 space-y-4 px-4 text-center">
               <BookOpen size={48} className="opacity-20 md:w-16 md:h-16" />
-              <p className="text-base md:text-lg text-gray-500 font-medium">專屬 V24 彈性自訂題數版已就緒</p>
+              <p className="text-base md:text-lg text-gray-500 font-medium">專屬 V25 獨立對話排版版已就緒</p>
               <ul className="text-sm space-y-2 text-gray-400">
                 <li>1. 貼上 API 金鑰</li>
                 <li>2. 自由設定單字題數 (可設為 0)</li>
