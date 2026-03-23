@@ -186,7 +186,6 @@ export default function App() {
     return data.map(renderFn);
   };
 
-  // V25: 針對多段落字串陣列的文字渲染進行優化
   const renderText = (textOrArray) => {
     if (!textOrArray || textOrArray === '' || (Array.isArray(textOrArray) && textOrArray.length === 0)) {
       return <div className="text-gray-400 italic py-2">（此區塊未生成）</div>;
@@ -194,12 +193,10 @@ export default function App() {
     let lines = Array.isArray(textOrArray) ? textOrArray : textOrArray.split('\n');
     return lines.map((line, i) => {
       if (!line.trim()) return <div key={i} className="h-2"></div>;
-      // 加上 mb-3 提供段落或對話間更佳的留白閱讀體驗
       return <div key={i} className="mb-3 leading-relaxed" contentEditable suppressContentEditableWarning>{line}</div>;
     });
   };
 
-  // V25 重大更新：將 main_text 與 translation 更改為 ARRAY (陣列) 格式，強迫 AI 分行
   const responseSchema = {
     type: "OBJECT",
     required: ["title", "part1", "part2", "part3", "part4", "part5"],
@@ -213,7 +210,7 @@ export default function App() {
           subtitle_zh: { type: "STRING" },
           vocabularies: { type: "ARRAY", items: { type: "OBJECT", required: ["word", "zh", "example_en", "example_zh"], properties: { word: { type: "STRING" }, zh: { type: "STRING" }, example_en: { type: "STRING" }, example_zh: { type: "STRING" } } } },
           phrases: { type: "ARRAY", items: { type: "OBJECT", required: ["phrase", "zh", "example_en", "example_zh"], properties: { phrase: { type: "STRING" }, zh: { type: "STRING" }, example_en: { type: "STRING" }, example_zh: { type: "STRING" } } } },
-          main_text: { type: "ARRAY", items: { type: "STRING" } } // V25: 強制為陣列
+          main_text: { type: "ARRAY", items: { type: "STRING" } }
         }
       },
       part2: {
@@ -224,15 +221,15 @@ export default function App() {
           subtitle_zh: { type: "STRING" },
           vocabularies: { type: "ARRAY", items: { type: "OBJECT", required: ["word", "zh", "example_en", "example_zh"], properties: { word: { type: "STRING" }, zh: { type: "STRING" }, example_en: { type: "STRING" }, example_zh: { type: "STRING" } } } },
           phrases: { type: "ARRAY", items: { type: "OBJECT", required: ["phrase", "zh", "example_en", "example_zh"], properties: { phrase: { type: "STRING" }, zh: { type: "STRING" }, example_en: { type: "STRING" }, example_zh: { type: "STRING" } } } },
-          main_text: { type: "ARRAY", items: { type: "STRING" } } // V25: 強制為陣列
+          main_text: { type: "ARRAY", items: { type: "STRING" } }
         }
       },
       part3: {
         type: "OBJECT",
         required: ["translation_part1", "translation_part2"],
         properties: {
-          translation_part1: { type: "ARRAY", items: { type: "STRING" } }, // V25: 強制為陣列
-          translation_part2: { type: "ARRAY", items: { type: "STRING" } }  // V25: 強制為陣列
+          translation_part1: { type: "ARRAY", items: { type: "STRING" } },
+          translation_part2: { type: "ARRAY", items: { type: "STRING" } } 
         }
       },
       part4: {
@@ -400,7 +397,7 @@ ${grammarInstruction}
 
     if (finalParsedData) {
       setWorksheetData(finalParsedData);
-      showToast('🎉 V25 講義生成成功！對話排版已獨立分行！');
+      showToast('🎉 V27 講義生成成功！標頭署名已加入！');
     }
     setIsLoading(false);
   };
@@ -433,7 +430,7 @@ ${grammarInstruction}
   const showPhrase2 = Array.isArray(worksheetData?.part2?.phrases) && worksheetData.part2.phrases.length > 0;
   const hasVocabOrPhrase2 = showVocab2 || showPhrase2;
 
-  const grammarLabels = selectedGrammars.map(g => g.split('：')[0]).join(', ');
+  const grammarLabels = selectedGrammars.map(g => g.split('：')[0]).join('、');
 
   return (
     <div className="flex flex-col md:flex-row h-screen bg-gray-100 font-sans overflow-hidden print:bg-white relative">
@@ -469,9 +466,10 @@ ${grammarInstruction}
         <div className="p-4 border-b bg-blue-700 text-white flex flex-col justify-center">
           <h1 className="text-xl font-bold flex items-center gap-2">
             <BookOpen size={22} />
-            跨域講義生成器 <span className="text-xs bg-blue-900 border border-blue-500 px-2 py-0.5 rounded shadow-sm">V25</span>
+            跨域講義生成器 <span className="text-xs bg-blue-900 border border-blue-500 px-2 py-0.5 rounded shadow-sm">V27</span>
           </h1>
-          <p className="text-blue-100 text-sm mt-1">專業版 - 獨立對話排版系統</p>
+          {/* V27: 設計者署名移至網頁左上標題區 */}
+          <p className="text-blue-100 text-sm mt-1">網頁設計者：大觀國中 阿清老師+Gemini 製作</p>
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 md:p-5 space-y-5 custom-scrollbar">
@@ -692,16 +690,18 @@ ${grammarInstruction}
                     <div className="text-gray-500" contentEditable suppressContentEditableWarning>
                       適用對象：{grade} ({cefrLevel}) 
                     </div>
-                    {selectedGrammars.length > 0 && (
-                      <div className="text-gray-500 mt-0.5" contentEditable suppressContentEditableWarning>
-                        文法：{selectedGrammars.join('、')}
-                      </div>
-                    )}
                   </div>
                   <div className="text-right text-gray-500" contentEditable suppressContentEditableWarning>
                     + 課本單元標題 (可修改)
                   </div>
                 </div>
+
+                {/* V27: 完整文法標題顯示於此 */}
+                {selectedGrammars.length > 0 && (
+                  <div className="text-gray-500 mb-4" contentEditable suppressContentEditableWarning>
+                    文法：{selectedGrammars.join('、')}
+                  </div>
+                )}
 
                 <div className="flex flex-col sm:flex-row print-flex-row gap-8">
                   {hasVocabOrPhrase1 && (
@@ -772,13 +772,15 @@ ${grammarInstruction}
                     <div className="text-gray-500" contentEditable suppressContentEditableWarning>
                       適用對象：{grade} ({cefrLevel})
                     </div>
-                    {selectedGrammars.length > 0 && (
-                      <div className="text-gray-500 mt-0.5" contentEditable suppressContentEditableWarning>
-                        文法：{selectedGrammars.join('、')}
-                      </div>
-                    )}
                   </div>
                 </div>
+
+                {/* V27: 完整文法標題顯示於此 */}
+                {selectedGrammars.length > 0 && (
+                  <div className="text-gray-500 mb-4" contentEditable suppressContentEditableWarning>
+                    文法：{selectedGrammars.join('、')}
+                  </div>
+                )}
 
                 <div className="flex flex-col sm:flex-row print-flex-row gap-8">
                   {hasVocabOrPhrase2 && (
@@ -975,7 +977,7 @@ ${grammarInstruction}
           ) : (
             <div className="h-full flex flex-col items-center justify-center text-gray-400 space-y-4 px-4 text-center">
               <BookOpen size={48} className="opacity-20 md:w-16 md:h-16" />
-              <p className="text-base md:text-lg text-gray-500 font-medium">專屬 V25 獨立對話排版版已就緒</p>
+              <p className="text-base md:text-lg text-gray-500 font-medium">專屬 V27 阿清老師特製版已就緒</p>
               <ul className="text-sm space-y-2 text-gray-400">
                 <li>1. 貼上 API 金鑰</li>
                 <li>2. 自由設定單字題數 (可設為 0)</li>
