@@ -197,7 +197,7 @@ export default function App() {
     });
   };
 
-  // V28 擴充 JSON Schema，新增 grammar_focus 陣列以容納文法解析
+  // V29: 擴充 JSON Schema，新增文法引導式翻譯欄位 (practice_zh, practice_en_blanks, practice_answer)
   const responseSchema = {
     type: "OBJECT",
     required: ["title", "grammar_focus", "part1", "part2", "part3", "part4", "part5"],
@@ -207,12 +207,15 @@ export default function App() {
         type: "ARRAY",
         items: {
           type: "OBJECT",
-          required: ["grammar_point", "explanation", "example_en", "example_zh"],
+          required: ["grammar_point", "explanation", "example_en", "example_zh", "practice_zh", "practice_en_blanks", "practice_answer"],
           properties: {
             grammar_point: { type: "STRING" },
             explanation: { type: "STRING" },
             example_en: { type: "STRING" },
-            example_zh: { type: "STRING" }
+            example_zh: { type: "STRING" },
+            practice_zh: { type: "STRING" },
+            practice_en_blanks: { type: "STRING" },
+            practice_answer: { type: "STRING" }
           }
         }
       },
@@ -293,7 +296,10 @@ export default function App() {
       "grammar_point": "文法名稱",
       "explanation": "文法使用注意事項的中文說明",
       "example_en": "英文例句",
-      "example_zh": "中文翻譯"
+      "example_zh": "中文翻譯",
+      "practice_zh": "引導式翻譯的中文題目",
+      "practice_en_blanks": "引導式翻譯的英文填空題 (挖空處請用 ___ 表示)",
+      "practice_answer": "挖空的正確答案"
     }
   ],
   "part1": {
@@ -320,9 +326,9 @@ export default function App() {
 - 為了確保前端排版清晰，主文 (main_text) 與中文翻譯 (translation) 已設為【字串陣列 (Array of Strings)】。
 - 若是「對話」形式，【換人講話就必須換下一個陣列元素】，絕對不可以把所有人的對話擠在同一個字串裡面！中文翻譯也必須完全對應。`;
 
-    // V28: 文法指令更新，要求產出解析
+    // V29: 文法指令更新，要求產出 1 題引導式翻譯
     const grammarInstruction = selectedGrammars.length > 0 
-      ? `- 核心文法：嚴格要求在此學習單的 Part 1 與 Part 2 主文中自然融入以下文法：【${selectedGrammars.join('、')}】！並且必須在 \`grammar_focus\` 陣列中產出這些文法的「使用注意事項中文說明」與「中英對照例句」。` 
+      ? `- 核心文法：嚴格要求在此學習單的 Part 1 與 Part 2 主文中自然融入以下文法：【${selectedGrammars.join('、')}】！並且必須在 \`grammar_focus\` 陣列中針對每個文法產出「使用注意事項中文說明」、「中英對照例句」，以及「1題引導式翻譯(Give It a Shot)供學生練習」。` 
       : `- 核心文法：無特定限制。請將 \`grammar_focus\` 陣列回傳為空陣列 []。`;
 
     const lengthInstruction = isDialogue
@@ -421,7 +427,7 @@ ${grammarInstruction}
 
     if (finalParsedData) {
       setWorksheetData(finalParsedData);
-      showToast('🎉 V28 講義生成成功！文法解析區塊已加入！');
+      showToast('🎉 V29 講義生成成功！文法引導翻譯已加入！');
     }
     setIsLoading(false);
   };
@@ -490,7 +496,7 @@ ${grammarInstruction}
         <div className="p-4 border-b bg-blue-700 text-white flex flex-col justify-center">
           <h1 className="text-xl font-bold flex items-center gap-2">
             <BookOpen size={22} />
-            跨域講義生成器 <span className="text-xs bg-blue-900 border border-blue-500 px-2 py-0.5 rounded shadow-sm">V28</span>
+            跨域講義生成器 <span className="text-xs bg-blue-900 border border-blue-500 px-2 py-0.5 rounded shadow-sm">V29</span>
           </h1>
           <p className="text-blue-100 text-sm mt-1">網頁設計者：大觀國中 阿清老師+Gemini 製作</p>
         </div>
@@ -719,20 +725,33 @@ ${grammarInstruction}
                   </div>
                 </div>
 
-                {/* V28: 顯示文法詳細說明與例句 */}
+                {/* V29: 顯示文法詳細說明、例句與引導翻譯 */}
                 {Array.isArray(worksheetData?.grammar_focus) && worksheetData.grammar_focus.length > 0 && (
                   <div className="mb-6 bg-blue-50/50 p-3 rounded border border-blue-100">
                     {worksheetData.grammar_focus.map((g, i) => (
-                      <div key={`grammar-${i}`} className="mb-3 last:mb-0 break-inside-avoid text-[13px] md:text-[14px]">
+                      <div key={`grammar-${i}`} className="mb-4 last:mb-0 break-inside-avoid text-[13px] md:text-[14px]">
                         <div className="font-bold text-blue-900 mb-1" contentEditable suppressContentEditableWarning>
                           📌 文法重點：{g?.grammar_point}
                         </div>
                         <div className="text-gray-700 mb-1 leading-relaxed" contentEditable suppressContentEditableWarning>
                           {g?.explanation}
                         </div>
-                        <div className="pl-3 border-l-2 border-blue-300">
+                        <div className="pl-3 border-l-2 border-blue-300 mb-2">
                           <div className="text-blue-800 italic" contentEditable suppressContentEditableWarning>{g?.example_en}</div>
                           <div className="text-gray-600" contentEditable suppressContentEditableWarning>{g?.example_zh}</div>
+                        </div>
+                        
+                        {/* V29: 新增引導式翻譯練習區塊 */}
+                        <div className="mt-3 pt-3 border-t border-blue-200">
+                          <div className="font-bold text-orange-700 mb-2 flex items-center gap-1 text-[13px] md:text-[14px]">
+                            ✏️ Give It a Shot 引導式翻譯
+                          </div>
+                          <div className="text-gray-800 font-medium mb-1" contentEditable suppressContentEditableWarning>
+                            {g?.practice_zh}
+                          </div>
+                          <div className="text-gray-800 leading-loose tracking-wide" contentEditable suppressContentEditableWarning>
+                            {g?.practice_en_blanks}
+                          </div>
                         </div>
                       </div>
                     ))}
@@ -1000,9 +1019,13 @@ ${grammarInstruction}
               </div>
 
               {/* 解答區 (動態呈現) */}
-              {(showTf || showFib || showMc) && (
-                <div className="mt-12 pt-4 border-t border-dashed border-gray-400 text-xs text-gray-500 break-inside-avoid text-center">
+              {(showTf || showFib || showMc || (Array.isArray(worksheetData?.grammar_focus) && worksheetData.grammar_focus.length > 0)) && (
+                <div className="mt-12 pt-4 border-t-2 border-dashed border-gray-400 text-xs text-gray-500 break-inside-avoid text-center">
                   <div className="font-bold mb-2">P.3 答案區 (Teacher's Key)</div>
+                  {/* V29: 新增文法引導翻譯解答 */}
+                  {Array.isArray(worksheetData?.grammar_focus) && worksheetData.grammar_focus.length > 0 && (
+                    <div className="mb-1">文法引導翻譯：{worksheetData.grammar_focus.map((g, i) => `${i + 1}. ${g?.practice_answer || '?'}`).join('  ')}</div>
+                  )}
                   {showTf && <span className="mr-4">是非題：{worksheetData.part4.true_false.map((q, i) => `${i + 1}.${q?.answer || '?'}`).join('  ')}</span>}
                   {showFib && <span className="mr-4">填空題：{worksheetData.part4.fill_in_blanks.questions.map((q, i) => `${i + 1 + actualTfCount}.${q?.answer || '?'}`).join('  ')}</span>}
                   {showMc && <span>選擇題：{worksheetData.part4.multiple_choice.map((q, i) => `${i + 1 + actualTfCount + actualFibCount}.(${q?.answer || '?'})`).join('  ')}</span>}
@@ -1013,7 +1036,7 @@ ${grammarInstruction}
           ) : (
             <div className="h-full flex flex-col items-center justify-center text-gray-400 space-y-4 px-4 text-center">
               <BookOpen size={48} className="opacity-20 md:w-16 md:h-16" />
-              <p className="text-base md:text-lg text-gray-500 font-medium">專屬 V28 文法解析增強版已就緒</p>
+              <p className="text-base md:text-lg text-gray-500 font-medium">專屬 V29 文法引導翻譯版已就緒</p>
               <ul className="text-sm space-y-2 text-gray-400">
                 <li>1. 貼上 API 金鑰</li>
                 <li>2. 自由設定單字題數 (可設為 0)</li>
