@@ -197,11 +197,25 @@ export default function App() {
     });
   };
 
+  // V28 擴充 JSON Schema，新增 grammar_focus 陣列以容納文法解析
   const responseSchema = {
     type: "OBJECT",
-    required: ["title", "part1", "part2", "part3", "part4", "part5"],
+    required: ["title", "grammar_focus", "part1", "part2", "part3", "part4", "part5"],
     properties: {
       title: { type: "STRING" },
+      grammar_focus: {
+        type: "ARRAY",
+        items: {
+          type: "OBJECT",
+          required: ["grammar_point", "explanation", "example_en", "example_zh"],
+          properties: {
+            grammar_point: { type: "STRING" },
+            explanation: { type: "STRING" },
+            example_en: { type: "STRING" },
+            example_zh: { type: "STRING" }
+          }
+        }
+      },
       part1: {
         type: "OBJECT",
         required: ["subtitle_en", "subtitle_zh", "vocabularies", "phrases", "main_text"],
@@ -268,11 +282,20 @@ export default function App() {
 【重要規定】
 1. 所有陣列與屬性都必須填寫真實的英文與中文內容。
 2. 【特別注意】若使用者要求某個項目的數量為「0」，請將該對應的陣列回傳為「空陣列 []」。否則，請確實填滿內容，不可敷衍。
-3. 若使用者要求「長篇」文章或對話，請充分發揮創意，提供豐富且具有深度的完整內容。
+3. 若使用者有指定文法，請在 grammar_focus 陣列中提供該文法的使用注意事項說明與例句；若無指定，請回傳空陣列 []。
+4. 若使用者要求「長篇」文章或對話，請充分發揮創意，提供豐富且具有深度的完整內容。
 
 【JSON 結構與排版極度重要規定】
 {
   "title": "學習單的創意標題",
+  "grammar_focus": [
+    {
+      "grammar_point": "文法名稱",
+      "explanation": "文法使用注意事項的中文說明",
+      "example_en": "英文例句",
+      "example_zh": "中文翻譯"
+    }
+  ],
   "part1": {
     "subtitle_en": "Part 1 英文副標",
     "subtitle_zh": "Part 1 中文副標",
@@ -297,9 +320,10 @@ export default function App() {
 - 為了確保前端排版清晰，主文 (main_text) 與中文翻譯 (translation) 已設為【字串陣列 (Array of Strings)】。
 - 若是「對話」形式，【換人講話就必須換下一個陣列元素】，絕對不可以把所有人的對話擠在同一個字串裡面！中文翻譯也必須完全對應。`;
 
+    // V28: 文法指令更新，要求產出解析
     const grammarInstruction = selectedGrammars.length > 0 
-      ? `- 核心文法：嚴格要求在此學習單的 Part 1 與 Part 2 主文 (main_text) 中，必須自然地融入以下文法句型：【${selectedGrammars.join('、')}】！` 
-      : `- 核心文法：無特定限制，請依循該年級的一般文法難度撰寫。`;
+      ? `- 核心文法：嚴格要求在此學習單的 Part 1 與 Part 2 主文中自然融入以下文法：【${selectedGrammars.join('、')}】！並且必須在 \`grammar_focus\` 陣列中產出這些文法的「使用注意事項中文說明」與「中英對照例句」。` 
+      : `- 核心文法：無特定限制。請將 \`grammar_focus\` 陣列回傳為空陣列 []。`;
 
     const lengthInstruction = isDialogue
       ? `Part 1 與 Part 2 內文長度：【每個 Part】皆須獨立並盡可能達到「${textLength}」。（1個角色說一句話算1個陣列元素）。`
@@ -397,7 +421,7 @@ ${grammarInstruction}
 
     if (finalParsedData) {
       setWorksheetData(finalParsedData);
-      showToast('🎉 V27 講義生成成功！標頭署名已加入！');
+      showToast('🎉 V28 講義生成成功！文法解析區塊已加入！');
     }
     setIsLoading(false);
   };
@@ -466,9 +490,8 @@ ${grammarInstruction}
         <div className="p-4 border-b bg-blue-700 text-white flex flex-col justify-center">
           <h1 className="text-xl font-bold flex items-center gap-2">
             <BookOpen size={22} />
-            跨域講義生成器 <span className="text-xs bg-blue-900 border border-blue-500 px-2 py-0.5 rounded shadow-sm">V27</span>
+            跨域講義生成器 <span className="text-xs bg-blue-900 border border-blue-500 px-2 py-0.5 rounded shadow-sm">V28</span>
           </h1>
-          {/* V27: 設計者署名移至網頁左上標題區 */}
           <p className="text-blue-100 text-sm mt-1">網頁設計者：大觀國中 阿清老師+Gemini 製作</p>
         </div>
 
@@ -696,10 +719,23 @@ ${grammarInstruction}
                   </div>
                 </div>
 
-                {/* V27: 完整文法標題顯示於此 */}
-                {selectedGrammars.length > 0 && (
-                  <div className="text-gray-500 mb-4" contentEditable suppressContentEditableWarning>
-                    文法：{selectedGrammars.join('、')}
+                {/* V28: 顯示文法詳細說明與例句 */}
+                {Array.isArray(worksheetData?.grammar_focus) && worksheetData.grammar_focus.length > 0 && (
+                  <div className="mb-6 bg-blue-50/50 p-3 rounded border border-blue-100">
+                    {worksheetData.grammar_focus.map((g, i) => (
+                      <div key={`grammar-${i}`} className="mb-3 last:mb-0 break-inside-avoid text-[13px] md:text-[14px]">
+                        <div className="font-bold text-blue-900 mb-1" contentEditable suppressContentEditableWarning>
+                          📌 文法重點：{g?.grammar_point}
+                        </div>
+                        <div className="text-gray-700 mb-1 leading-relaxed" contentEditable suppressContentEditableWarning>
+                          {g?.explanation}
+                        </div>
+                        <div className="pl-3 border-l-2 border-blue-300">
+                          <div className="text-blue-800 italic" contentEditable suppressContentEditableWarning>{g?.example_en}</div>
+                          <div className="text-gray-600" contentEditable suppressContentEditableWarning>{g?.example_zh}</div>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 )}
 
@@ -775,7 +811,7 @@ ${grammarInstruction}
                   </div>
                 </div>
 
-                {/* V27: 完整文法標題顯示於此 */}
+                {/* Page 2: 簡單保留文法標題即可，不重複顯示詳細說明 */}
                 {selectedGrammars.length > 0 && (
                   <div className="text-gray-500 mb-4" contentEditable suppressContentEditableWarning>
                     文法：{selectedGrammars.join('、')}
@@ -977,7 +1013,7 @@ ${grammarInstruction}
           ) : (
             <div className="h-full flex flex-col items-center justify-center text-gray-400 space-y-4 px-4 text-center">
               <BookOpen size={48} className="opacity-20 md:w-16 md:h-16" />
-              <p className="text-base md:text-lg text-gray-500 font-medium">專屬 V27 阿清老師特製版已就緒</p>
+              <p className="text-base md:text-lg text-gray-500 font-medium">專屬 V28 文法解析增強版已就緒</p>
               <ul className="text-sm space-y-2 text-gray-400">
                 <li>1. 貼上 API 金鑰</li>
                 <li>2. 自由設定單字題數 (可設為 0)</li>
